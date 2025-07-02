@@ -1,7 +1,24 @@
 from abc import ABC, abstractmethod
 from e2b_desktop import Sandbox
+from typing import Optional, Callable, Dict, Any
 
 class BaseTool(ABC):
+    def __init__(self):
+        self._event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    
+    def set_event_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Set a callback function to be called when events occur"""
+        self._event_callback = callback
+    
+    def emit_event(self, event_type: str, data: Dict[str, Any]):
+        """Emit an event to the callback if one is set"""
+        if self._event_callback:
+            self._event_callback({
+                "type": event_type,
+                "tool": self.name,
+                "data": data
+            })
+    
     @property
     @abstractmethod
     def name(self):
@@ -15,6 +32,7 @@ class BaseTool(ABC):
     @abstractmethod
     def execute(self, **kwargs):
         pass
+
 
 
 class ObserveRepoStructure(BaseTool):
@@ -42,10 +60,35 @@ class ObserveRepoStructure(BaseTool):
     }
 
     def __init__(self, repo):
+        super().__init__()
         self.repo = repo
     
     def execute(self, max_depth: int, show_hidden: bool):
-        return self.repo.observe_repo_structure(max_depth=max_depth, show_hidden=show_hidden)
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "observing_repository_structure",
+            "max_depth": max_depth,
+            "show_hidden": show_hidden
+        })
+        
+        try:
+            structure = self.repo.observe_repo_structure(max_depth=max_depth, show_hidden=show_hidden)
+            
+            # Emit success event
+            self.emit_event("tool_complete", {
+                "action": "repository_structure_observed",
+                "structure_preview": structure[:1000] + "..." if len(structure) > 1000 else structure,
+                "total_length": len(structure)
+            })
+            
+            return structure
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "observing_repository_structure",
+                "error": str(e)
+            })
+            raise
 
 
 class ReadFile(BaseTool):
@@ -69,11 +112,38 @@ class ReadFile(BaseTool):
     }
 
     def __init__(self, repo):
+        super().__init__()
         self.repo = repo
     
     def execute(self, file_path: str):
-        return self.repo.read_file(file_path=file_path)
-    
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "reading_file",
+            "file_path": file_path
+        })
+        
+        try:
+            content = self.repo.read_file(file_path=file_path)
+            
+            # Emit success event
+            self.emit_event("tool_complete", {
+                "action": "file_read",
+                "file_path": file_path,
+                "content_preview": content[:500] + "..." if len(content) > 500 else content,
+                "content_length": len(content),
+                "lines": len(content.split('\n'))
+            })
+            
+            return content
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "reading_file",
+                "file_path": file_path,
+                "error": str(e)
+            })
+            raise
+
 
 class WriteFile(BaseTool):
     name = "write_file"
@@ -100,10 +170,39 @@ class WriteFile(BaseTool):
     }
 
     def __init__(self, repo):
+        super().__init__()
         self.repo = repo
     
     def execute(self, file_path: str, content: str):
-        return self.repo.write_file(file_path=file_path, content=content)
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "writing_file",
+            "file_path": file_path,
+            "content_length": len(content),
+            "lines": len(content.split('\n'))
+        })
+        
+        try:
+            result = self.repo.write_file(file_path=file_path, content=content)
+            
+            # Emit success event
+            self.emit_event("tool_complete", {
+                "action": "file_written",
+                "file_path": file_path,
+                "content_length": len(content),
+                "lines": len(content.split('\n')),
+                "content_preview": content[:200] + "..." if len(content) > 200 else content
+            })
+            
+            return result
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "writing_file",
+                "file_path": file_path,
+                "error": str(e)
+            })
+            raise
 
 
 class DeleteFiles(BaseTool):
@@ -130,10 +229,36 @@ class DeleteFiles(BaseTool):
     }
 
     def __init__(self, repo):
+        super().__init__()
         self.repo = repo
     
     def execute(self, file_paths: list[str]):
-        return self.repo.delete_files(file_paths=file_paths)
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "deleting_files",
+            "file_paths": file_paths,
+            "file_count": len(file_paths)
+        })
+        
+        try:
+            result = self.repo.delete_files(file_paths=file_paths)
+            
+            # Emit success event
+            self.emit_event("tool_complete", {
+                "action": "files_deleted",
+                "file_paths": file_paths,
+                "file_count": len(file_paths)
+            })
+            
+            return result
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "deleting_files",
+                "file_paths": file_paths,
+                "error": str(e)
+            })
+            raise
 
 
 class CommitAndPush(BaseTool):
@@ -157,11 +282,35 @@ class CommitAndPush(BaseTool):
     }
 
     def __init__(self, repo):
+        super().__init__()
         self.repo = repo
     
     def execute(self, commit_message: str):
-        return self.repo.commit_and_push_to_main(commit_message=commit_message)
-    
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "committing_and_pushing",
+            "commit_message": commit_message
+        })
+        
+        try:
+            result = self.repo.commit_and_push_to_main(commit_message=commit_message)
+            
+            # Emit success event
+            self.emit_event("tool_complete", {
+                "action": "committed_and_pushed",
+                "commit_message": commit_message,
+                "result": result
+            })
+            
+            return result
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "committing_and_pushing",
+                "commit_message": commit_message,
+                "error": str(e)
+            })
+            raise
 
 
 class FinishTask(BaseTool):
@@ -185,15 +334,37 @@ class FinishTask(BaseTool):
     }
 
     def __init__(self, agentic_loop):
+        super().__init__()
         self.agentic_loop = agentic_loop
     
     def execute(self, summary: str):
-        # Signal the loop to stop
-        self.agentic_loop.stop()
+        # Emit start event
+        self.emit_event("tool_start", {
+            "action": "finishing_task",
+            "summary": summary
+        })
         
-        # Format the final message
-        result = f"\n{'='*60}\nTask Completion Report\n{'='*60}\n"
-        result += f"Summary: {summary}\n"
-        result += f"{'='*60}\n"
-        
-        return result
+        try:
+            # Signal the loop to stop
+            self.agentic_loop.stop()
+            
+            # Format the final message
+            result = f"\n{'='*60}\nTask Completion Report\n{'='*60}\n"
+            result += f"Summary: {summary}\n"
+            result += f"{'='*60}\n"
+            
+            # Emit completion event
+            self.emit_event("tool_complete", {
+                "action": "task_finished",
+                "summary": summary,
+                "final_report": result
+            })
+            
+            return result
+        except Exception as e:
+            # Emit error event
+            self.emit_event("tool_error", {
+                "action": "finishing_task",
+                "error": str(e)
+            })
+            raise
