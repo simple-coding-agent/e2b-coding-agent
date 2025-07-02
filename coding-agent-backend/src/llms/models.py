@@ -1,0 +1,101 @@
+import os
+from dotenv import load_dotenv
+from typing import Dict, List, Tuple, Optional
+import json
+from abc import ABC, abstractmethod
+
+
+from openai import OpenAI
+from .tools import BaseTool
+
+load_dotenv()
+
+class BaseModel(ABC):
+    @abstractmethod
+    def complete(self, **kwargs):
+        pass
+
+
+class OpenRouterModel(BaseModel):
+    def __init__(self, 
+                tools: Dict[str, BaseTool] = {},
+                model: str = "anthropic/claude-sonnet-4",
+                api_key_name: str = "OPENROUTER_API_KEY"
+                ):
+
+        self.model = model
+        open_router_api_key = os.environ.get(api_key_name)
+        self.client = OpenAI(base_url="https://openrouter.ai/api/v1",
+                             api_key=open_router_api_key)
+        
+        self.tools = tools
+
+    def complete(self, messages: list):
+        """
+        Sends a conversation to the OpenAI API and processes responses,
+        including tool calls when required.
+        """
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=[tool.function_schema for tool in self.tools.values()],
+            tool_choice="auto"
+        )
+
+        response_message = response.choices[0].message
+        messages.append({
+            "role": "assistant",
+            "content": response_message.content,
+            "tool_calls": response_message.tool_calls
+        })
+
+        # Process any tool calls requested by the model
+        if response_message.tool_calls:
+            tool_responses = self._handle_tool_calls(response_message.tool_calls)
+
+            # Append tool responses to messages
+            messages.extend(tool_responses)
+
+            # # Re-run the conversation with updated messages
+            # return self.complete(messages)
+
+        return response_message.content, messages
+
+    def _handle_tool_calls(self, tool_calls):
+        """
+        Handles execution of tool calls requested by the model.
+
+        Args:
+            tool_calls (list): List of tool calls requested by the model.
+
+        Returns:
+            list: List of responses from the executed tools.
+        """
+        tool_call_responses = []
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
+
+            if tool_name in self.tools:
+                tool_response = self.tools[tool_name].execute(**arguments)
+
+                tool_call_responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": tool_response
+                })
+
+            # LLM hallucinated the tool 
+            else:
+                print(f"The tool {tool_name} has been hallucinated by the LLM.")
+                tool_call_responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": f"The tool does not exist."
+                })
+
+
+        return tool_call_responses
