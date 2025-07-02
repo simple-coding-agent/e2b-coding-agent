@@ -13,12 +13,12 @@
   --fg-200: #71717a;
   
   --border: #27272a;
-  --radius: 0.375rem;
+  --radius: 0.5rem; /* Slightly larger radius for a softer look */
 
-  /* Accent Color (NEW ORANGE) */
-  --accent: rgb(229, 123, 0);       /* The requested orange */
-  --accent-dark: rgb(204, 110, 0);   /* A darker shade for hover */
-  --accent-fg: #ffffff;              /* White text for good contrast on orange */
+  /* Accent Color (Orange) */
+  --accent: rgb(229, 123, 0);
+  --accent-dark: rgb(204, 110, 0);
+  --accent-fg: #ffffff;
 
   /* Semantic Colors */
   --success: #22c55e;
@@ -27,8 +27,8 @@
   --info: #3b82f6;
 
   /* Element-specific Colors */
-  --llm-color: var(--warning);
-  --tool-color: #a78bfa; /* A pleasing violet for tools */
+  --purple: #a78bfa; /* For agent thoughts */
+  --tool-color: #a78bfa;
 }
 
 /* --- Global Resets & Base Styles --- */
@@ -42,7 +42,6 @@ body {
   font-family: 'IBM Plex Sans', sans-serif;
   background: var(--bg);
   color: var(--fg);
-  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -55,11 +54,65 @@ body {
 
 /* --- Keyframes --- */
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse { 50% { opacity: 0.6; } }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 50% { opacity: 0.7; } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+
+/* --- NEW: Main App Layout --- */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.header h1 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 2.25rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.header p {
+  color: var(--fg-100);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.main-content {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* --- Agent Terminal Wrapper --- */
+.agent-terminal-wrapper {
+  width: 100%;
+  max-width: 900px; /* Constrain width */
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Center content when idle */
+.agent-terminal-wrapper.idle {
+  justify-content: center;
+  flex-grow: 1;
+}
 
 /* --- Input Section --- */
 .input-section {
+  width: 100%;
   background: var(--bg-100);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -104,71 +157,59 @@ body {
   position: relative;
 }
 
-.button-primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-dark);
-}
-
-.button-secondary {
-  background: var(--bg-200);
-  color: var(--fg);
-  border: 1px solid var(--border);
-}
-
-.button-secondary:hover:not(:disabled) {
-  background: var(--bg-300);
-}
-
-.button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.button-primary { background: var(--accent); color: var(--accent-fg); }
+.button-primary:hover:not(:disabled) { background: var(--accent-dark); }
+.button-secondary { background: var(--bg-200); color: var(--fg); border: 1px solid var(--border); }
+.button-secondary:hover:not(:disabled) { background: var(--bg-300); }
+.button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .button-loading::after {
   content: '';
   position: absolute;
   width: 16px;
   height: 16px;
-  top: 50%;
-  left: 50%;
-  margin-left: -8px;
-  margin-top: -8px;
+  top: 50%; left: 50%;
+  margin-left: -8px; margin-top: -8px;
   border: 2px solid var(--accent-fg);
   border-radius: 50%;
   border-top-color: transparent;
   animation: spin 0.8s linear infinite;
 }
 
-/* --- Status Bar --- */
-.status-bar {
+/* --- NEW: Status Toast --- */
+.status-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
   background: var(--bg-100);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.875rem;
+  z-index: 100;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.status-toast.exiting {
+  animation: fadeOut 0.3s ease-in forwards;
 }
 
 .status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--success);
-  animation: pulse 2s infinite;
+  flex-shrink: 0;
 }
 
-.status-bar.error .status-indicator {
-  background: var(--error);
-  animation: none;
-}
+.status-toast.info .status-indicator { background: var(--info); }
+.status-toast.success .status-indicator { background: var(--success); }
+.status-toast.error .status-indicator { background: var(--error); animation: none; }
+.status-toast:not(.error) .status-indicator { animation: pulse 2s infinite; }
 
 /* --- Terminal --- */
 .terminal-container {
@@ -176,6 +217,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  margin-bottom: 1.5rem; /* Space for reappearing input */
 }
 
 .terminal-header {
@@ -210,7 +252,7 @@ body {
 
 /* --- Event Rendering --- */
 .event {
-  margin: 0.5rem;
+  margin: 0.25rem 0.5rem;
   animation: fadeIn 0.3s ease-out forwards;
 }
 
@@ -224,17 +266,9 @@ body {
   user-select: none;
 }
 
-.clickable:hover {
-  background: var(--bg-100);
-  cursor: pointer;
-}
-
-.expand-icon {
-  transition: transform 0.2s ease;
-}
-.expand-icon.expanded {
-  transform: rotate(90deg);
-}
+.clickable:hover { background: var(--bg-100); cursor: pointer; }
+.expand-icon { transition: transform 0.2s ease; }
+.expand-icon.expanded { transform: rotate(90deg); }
 
 .event-timestamp {
   margin-left: auto;
@@ -243,45 +277,63 @@ body {
   white-space: nowrap;
 }
 
-.simple-event, .llm-event .event-header, .tool-call-event .event-header {
+/* --- THOUGHT Event (inline as requested) --- */
+.thought-event {
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: rgba(167, 139, 250, 0.05); /* Very subtle purple background */
+  border: 1px solid rgba(167, 139, 250, 0.1);
+  color: var(--fg-100);
+}
+.thought-event .event-header {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--purple);
+}
+.thought-event .event-content p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  color: var(--fg);
+}
+
+
+/* --- TOOL_CALL Event --- */
+.tool-call-event .event-header {
   border: 1px solid var(--border);
   background: var(--bg-100);
-}
-
-.llm-event .event-header, .tool-call-event .event-header, .simple-event {
   border-left-width: 3px;
 }
-
-/* Event-specific border colors */
-.simple-event { border-color: var(--border); }
-.simple-event.event-error { border-left-color: var(--error); }
-.llm-event .event-header { border-left-color: var(--llm-color); }
 .tool-call-event.status-running .event-header { border-left-color: var(--info); }
 .tool-call-event.status-completed .event-header { border-left-color: var(--success); }
 .tool-call-event.status-error .event-header { border-left-color: var(--error); }
+.event-tool { color: var(--tool-color); font-weight: 500; }
+.tool-icon, .tool-status-icon { display: flex; align-items: center; justify-content: center; }
 
-
-/* Event Icons */
-.event-tool {
-  color: var(--tool-color);
-  font-weight: 500;
-}
-.tool-icon, .tool-status-icon {
+/* -- Other Events (Simple) -- */
+.simple-event {
   display: flex;
   align-items: center;
-  justify-content: center;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--fg-100);
 }
+.simple-event .event-header {
+  width: 100%;
+  padding: 0;
+}
+.simple-event.event-error .event-header { color: var(--error); }
 
-/* Expanded Tool/LLM Details */
+/* Expanded Details */
 .tool-details, .event-data {
-  margin: 0.5rem 0.75rem 0.75rem 0.75rem; /* Margin for content */
+  margin: 0.5rem 0.75rem 0.75rem 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border);
-  animation: fadeIn 0.2s ease-out;
   font-size: 0.85rem;
   line-height: 1.6;
 }
-
 pre, .tool-section-content {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -291,22 +343,15 @@ pre, .tool-section-content {
   white-space: pre-wrap;
   word-break: break-all;
 }
-
-.tool-section {
-  margin-top: 0.75rem;
-}
-
+.tool-section { margin-top: 0.75rem; }
 .tool-section-header {
-  font-size: 0.7rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  color: var(--fg-100);
-  margin-bottom: 0.5rem;
-  padding-left: 0.25rem;
+  font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
+  color: var(--fg-100); margin-bottom: 0.5rem; padding-left: 0.25rem;
 }
 
-/* --- Text Color Utilities from Lucide Icons --- */
+
+/* --- Text Color Utilities --- */
 .text-success { color: var(--success); }
 .text-error { color: var(--error); }
 .text-info { color: var(--info); }
-.text-llm-color { color: var(--llm-color); }
+.text-purple-400 { color: var(--purple); }
