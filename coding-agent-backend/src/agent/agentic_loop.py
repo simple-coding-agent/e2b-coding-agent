@@ -15,12 +15,9 @@ class AgenticLoop:
         self._should_stop = False
         self._event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         
-        # Initialize messages with the user query
         self.messages = [
-            {
-                'role': 'user',
-                'content': initial_query
-            }
+            {'role': 'system', 'content': 'You are a proficient software engineering AI. Your goal is to complete the user\'s request by using the available tools. Reason step-by-step and use the tools provided to you. When the task is fully complete, use the finish_task tool.'},
+            {'role': 'user', 'content': initial_query}
         ]
         
         self.iteration_count = 0
@@ -52,6 +49,8 @@ class AgenticLoop:
             "max_iterations": self.max_iterations
         })
         
+        final_response_content = "Loop ended without a final response."
+
         while self.iteration_count < self.max_iterations and not self._should_stop:
             self.iteration_count += 1
             
@@ -61,56 +60,50 @@ class AgenticLoop:
             })
             
             try:
-                # Call the LLM - USE THE ASYNC VERSION!
-                response, self.messages = await self.llm_model.complete_async(self.messages)
+                # The llm_model will now emit its own granular events (`llm.thought`, `llm.tool_call`, etc.)
+                response_content, self.messages = await self.llm_model.complete_async(self.messages)
                 
-                self.emit_event("agent.response", {
+                if response_content:
+                    final_response_content = response_content
+
+                # **FIX: Remove the old `agent.response` event and add a clear `iteration.end` event.**
+                # This provides a clean structural signal to the frontend that a full cycle is complete.
+                self.emit_event("agent.iteration.end", {
                     "iteration": self.iteration_count,
-                    "response": response[:500] + "..." if len(response) > 500 else response,
-                    "full_response": response
+                    "stop_condition_met": self._should_stop
                 })
                 
-                # Check if we should stop
                 if self._should_stop:
                     self.emit_event("agent.loop.complete", {
-                        "reason": "task_finished",
+                        "reason": "task_finished_by_tool",
                         "iterations": self.iteration_count
                     })
-                    return response, self.messages
+                    # The `finish_task` tool provides the final response content
+                    return final_response_content, self.messages
                 
-                # Small delay to prevent overwhelming the client
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1) # Small delay to allow event queue to process
                 
             except Exception as e:
+                import traceback
                 self.emit_event("agent.error", {
                     "iteration": self.iteration_count,
-                    "error": str(e)
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
                 })
-                
-                self.messages.append({
-                    'role': 'system',
-                    'content': f"An error occurred: {str(e)}. Please handle this appropriately."
-                })
-                
+                self.messages.append({'role': 'system', 'content': f"An error occurred: {str(e)}."})
                 if self.iteration_count >= self.max_iterations:
                     return str(e), self.messages
         
-        # Reached max iterations
         if not self._should_stop:
             self.emit_event("agent.loop.max_iterations", {
                 "iterations": self.max_iterations
             })
-            
-            self.messages.append({
-                'role': 'system',
-                'content': "You have reached the maximum number of iterations. Please use the finish_task tool to summarize what was accomplished so far."
-            })
+            self.messages.append({'role': 'system', 'content': "You have reached the maximum number of iterations. Please use the finish_task tool to summarize what was accomplished."})
             
             try:
-                # USE THE ASYNC VERSION HERE TOO!
-                response, self.messages = await self.llm_model.complete_async(self.messages)
-                return response, self.messages
-            except:
-                return "Max iterations reached", self.messages
+                response_content, self.messages = await self.llm_model.complete_async(self.messages)
+                return response_content or "Max iterations reached.", self.messages
+            except Exception as e:
+                return f"Max iterations reached, and a final error occurred: {str(e)}", self.messages
         
-        return "Task completed", self.messages
+        return final_response_content, self.messages

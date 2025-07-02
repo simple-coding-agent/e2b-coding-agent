@@ -1,38 +1,43 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import {
   CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight,
-  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud
+  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit
 } from 'lucide-react'
 
-// --- Interfaces ---
+// --- Interfaces and Types ---
 
-// Raw event directly from the server stream
 interface RawEvent {
   type: string;
   timestamp: string;
   data: any;
 }
 
-// A processed event, structured for easy rendering
-type ProcessedEvent = {
+// A base type for all processed events
+interface ProcessedEventBase {
   key: string;
   timestamp: string;
   raw: RawEvent;
-} & (
-  | { displayType: 'TASK_LIFECYCLE'; icon: JSX.Element; message: string; }
-  | { displayType: 'SETUP'; icon: JSX.Element; message: string; }
-  | { displayType: 'ERROR'; message: string; content: any; }
-  | {
-      displayType: 'TOOL_CALL';
-      status: 'running' | 'completed' | 'error';
-      toolName: string;
-      params: any;
-      output?: any;
-      error?: any;
-    }
-);
+}
+
+// Specific types for each kind of displayable event
+type TaskLifecycleEvent = ProcessedEventBase & { displayType: 'TASK_LIFECYCLE'; icon: JSX.Element; message: string; };
+type SetupEvent = ProcessedEventBase & { displayType: 'SETUP'; icon: JSX.Element; message: string; };
+type ErrorEvent = ProcessedEventBase & { displayType: 'ERROR'; message: string; content?: any; };
+type ThoughtEvent = ProcessedEventBase & { displayType: 'LLM_THOUGHT'; text: string; };
+type ToolCallEvent = ProcessedEventBase & {
+  displayType: 'TOOL_CALL';
+  status: 'running' | 'completed' | 'error';
+  toolName: string;
+  params: any;
+  output?: any;
+  error?: any;
+};
+
+// A union of all possible processed event types
+type ProcessedEvent = TaskLifecycleEvent | SetupEvent | ErrorEvent | ThoughtEvent | ToolCallEvent;
+
 
 export default function AgentTerminal() {
   const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
@@ -42,173 +47,106 @@ export default function AgentTerminal() {
   const [statusType, setStatusType] = useState<'info' | 'error'>('info');
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const terminalRef = useRef<HTMLDivElement>(null);
-  
-  // Cache processed events to prevent re-computation and flickering
+
+  // Refs for state that shouldn't trigger re-renders on its own
   const eventCache = useRef(new Map<string, ProcessedEvent>()).current;
+  const runningTools = useRef(new Map<string, string>()).current; // Maps toolName to the key of its 'running' event
 
-  // Add this near the top of your component
-  useEffect(() => {
-    console.log(`🔄 Component re-rendered. Raw events: ${rawEvents.length}, Processed events: ${processedEvents.length}`);
-  }, [rawEvents]);
-
-  // Auto-scroll to bottom of the terminal
+  // Auto-scroll to bottom of the terminal on new events
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [rawEvents]);
 
-  // Process raw events into a stable list for rendering
+  // The core logic to process raw server events into a stable, renderable list.
   const processedEvents = useMemo(() => {
-    console.log(`🔄 Processing ${rawEvents.length} raw events`);
-    
     rawEvents.forEach((event, index) => {
-      const [category, action] = event.type.split('.');
-      
-      // For tool events, we need to find the original start event and update it
-      if (category === 'tool' && (action === 'end' || action === 'error')) {
-        console.log(`🔗 Looking for running tool to update: ${event.data.tool_name}`);
-        
-        // Find the running tool event in the cache that matches the name
-        const cacheEntries = Array.from(eventCache.values()).reverse();
-        const runningToolEntry = cacheEntries.find(p_event => 
-          p_event.displayType === 'TOOL_CALL' && 
-          p_event.toolName === event.data.tool_name && 
-          p_event.status === 'running'
-        );
-        
-        if (runningToolEntry) {
-          console.log(`✨ Found and updating tool: ${event.data.tool_name} -> ${action}`);
-          runningToolEntry.status = action === 'end' ? 'completed' : 'error';
-          if (action === 'end') {
-            runningToolEntry.output = event.data;
-          } else {
-            runningToolEntry.error = event.data;
-          }
-        } else {
-          console.warn(`⚠️ Could not find running tool to update: ${event.data.tool_name}`);
-          console.log('Available cache entries:', cacheEntries.map(e => ({
-            type: e.displayType,
-            tool: e.displayType === 'TOOL_CALL' ? e.toolName : 'N/A',
-            status: e.displayType === 'TOOL_CALL' ? e.status : 'N/A'
-          })));
-        }
-        return; // Don't process end/error events as new list items
-      }
+      let key = `event-${index}-${event.timestamp}`;
 
-      // Generate a unique ID for this event
-      let uniqueId = `event-${index}-${event.timestamp}`;
-      
-      // If the event is already cached, skip it
-      if (eventCache.has(uniqueId)) {
-        console.log(`⏭️ Event already cached: ${uniqueId}`);
-        return;
-      }
+      // Skip if this event object has already been processed and cached.
+      if (eventCache.has(key)) return;
 
       let processed: ProcessedEvent | null = null;
-      
-      switch (category) {
-        case 'task':
-          console.log(`📋 Processing task event: ${action}`);
-          if (action === 'start') {
-            processed = { 
-              key: uniqueId, 
-              displayType: 'TASK_LIFECYCLE', 
-              icon: <span className='text-success'>▶</span>, 
-              message: `Task started: "${event.data.query}"`, 
-              raw: event, 
-              timestamp: event.timestamp 
-            };
-          } else if (action === 'finish') {
-            processed = { 
-              key: uniqueId, 
-              displayType: 'TASK_LIFECYCLE', 
-              icon: <CheckCircle className="text-success" />, 
-              message: `Task completed successfully (${event.data.total_iterations} iterations)`, 
-              raw: event, 
-              timestamp: event.timestamp 
-            };
-          } else if (action === 'error') {
-            processed = { 
-              key: uniqueId, 
-              displayType: 'ERROR', 
-              message: event.data.error, 
-              content: event.data, 
-              raw: event, 
-              timestamp: event.timestamp 
-            };
-          }
-          break;
+      let shouldCache = true;
 
-        case 'setup':
-          console.log(`⚙️ Processing setup event: ${action}`);
-          const icon = action.endsWith('end') ? 
-            <CheckCircle className="text-success" size={16} /> : 
-            <Loader className="animate-spin text-info" size={16} />;
-          processed = { 
-            key: uniqueId, 
-            displayType: 'SETUP', 
-            icon, 
-            message: event.data.message, 
-            raw: event, 
-            timestamp: event.timestamp 
+      // **FIX: Switch on the full, explicit event type for reliability.**
+      // This avoids all the ambiguity of splitting the string.
+      switch (event.type) {
+        case 'task.start':
+          processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp };
+          break;
+        case 'task.finish':
+          processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp };
+          break;
+        case 'task.error':
+          processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp };
+          break;
+        case 'setup.sandbox.end':
+        case 'setup.repo.end':
+        case 'setup.model.end':
+          processed = { key, displayType: 'SETUP', icon: <CheckCircle className="text-success" size={16} />, message: event.data.message, raw: event, timestamp: event.timestamp };
+          break;
+        case 'agent.loop.start':
+          processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp };
+          break;
+        case 'llm.thought':
+          processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp };
+          break;
+        case 'llm.tool_call.start':
+          key = `tool-${event.data.tool_name}-${event.timestamp}`; // Make the key unique for this call
+          processed = {
+            key,
+            displayType: 'TOOL_CALL',
+            status: 'running',
+            toolName: event.data.tool_name,
+            // **FIX: Use `event.data.arguments`, not `event.data.params`**
+            params: event.data.arguments,
+            raw: event,
+            timestamp: event.timestamp
           };
+          // Track the key of this running tool to update it later
+          runningTools.set(event.data.tool_name, key);
           break;
 
-        case 'agent':
-          console.log(`🤖 Processing agent event: ${action}`);
-          if (action === 'loop' && event.type === 'agent.loop.start') {
-            processed = { 
-              key: uniqueId, 
-              displayType: 'TASK_LIFECYCLE', 
-              icon: <BotMessageSquare className="text-info" size={16} />, 
-              message: "Agent started working on the task", 
-              raw: event, 
-              timestamp: event.timestamp 
-            };
+        case 'llm.tool_call.end':
+          const runningToolKey = runningTools.get(event.data.tool_name);
+          if (runningToolKey && eventCache.has(runningToolKey)) {
+            const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent;
+            // Update the existing event in the cache directly
+            toolToUpdate.status = event.data.was_successful ? 'completed' : 'error';
+            if (event.data.was_successful) {
+              toolToUpdate.output = event.data.response_preview;
+            } else {
+              toolToUpdate.error = event.data.error;
+            }
+            // This tool is no longer running
+            runningTools.delete(event.data.tool_name);
           }
-          // Remove LLM_THOUGHT processing - we're simplifying this
-          break;
-
-        case 'tool':
-          if (action === 'start') {
-            // Use a unique key based on tool name and timestamp for linking
-            uniqueId = `tool-${event.data.tool_name}-${event.timestamp}`;
-            console.log(`🔧 Processing tool START: ${event.data.tool_name}, ID: ${uniqueId}`);
-            processed = {
-              key: uniqueId,
-              displayType: 'TOOL_CALL',
-              status: 'running',
-              toolName: event.data.tool_name,
-              params: event.data,
-              raw: event,
-              timestamp: event.timestamp,
-            };
-          }
+          // An 'end' event only updates an existing event, it doesn't create a new one.
+          shouldCache = false;
           break;
       }
       
-      if (processed) {
-        console.log(`💾 Caching processed event: ${processed.key}`);
+      if (processed && shouldCache) {
         eventCache.set(processed.key, processed);
       }
     });
     
-    const result = Array.from(eventCache.values());
-    console.log(`📊 Returning ${result.length} processed events`);
-    return result;
-  }, [rawEvents, eventCache]);
+    // Return the processed events from the cache as a new array to trigger re-render
+    return Array.from(eventCache.values());
+  }, [rawEvents, eventCache, runningTools]);
 
   const startTask = async () => {
-    // Clear the cache when starting a new task
-    eventCache.clear();
-    
     if (!query.trim()) {
       setStatus('Please enter a query');
       setStatusType('error');
       return;
     }
 
+    // Reset state completely for a new run
+    eventCache.clear();
+    runningTools.clear();
     setRawEvents([]);
     setExpandedEvents(new Set());
     setIsRunning(true);
@@ -230,89 +168,50 @@ export default function AgentTerminal() {
       const eventSource = new EventSource(`http://127.0.0.1:8000/tasks/${taskId}/events`);
 
       eventSource.onmessage = (e) => {
-        try {
-          const event: RawEvent = JSON.parse(e.data);
-          
-          // ADD DETAILED LOGGING HERE
-          console.log(`🔥 Event received at ${new Date().toISOString()}:`, {
-            type: event.type,
-            timestamp: event.timestamp,
-            data: event.data
-          });
-          
-          if (event.type === 'stream.keepalive') {
-            console.log('⏰ Keepalive event - ignoring');
-            return;
-          }
-          
-          // Add event to state immediately
-          console.log('📝 Adding event to state:', event.type);
-          setRawEvents(prev => {
-            const newEvents = [...prev, event];
-            console.log(`📊 Total events now: ${newEvents.length}`);
-            return newEvents;
-          });
+        const event: RawEvent = JSON.parse(e.data);
+        if (event.type === 'stream.keepalive') return;
+        
+        setRawEvents(prev => [...prev, event]);
 
-          // Update status based on event type
-          const [category, action] = event.type.split('.');
-          console.log(`🏷️ Event category: ${category}, action: ${action}`);
-          
-          switch (category) {
-            case 'setup': 
-              console.log('⚙️ Setup event:', event.data.message);
-              setStatus(event.data.message || 'Setting up environment...'); 
-              break;
-            case 'tool':
-              if (action === 'start') {
-                console.log('🔧 Tool START:', event.data.tool_name);
-                setStatus(`Executing: ${event.data.tool_name}`);
-              } else if (action === 'end') {
-                console.log('✅ Tool END:', event.data.tool_name);
-                setStatus(`Completed: ${event.data.tool_name}`);
-              } else if (action === 'error') {
-                console.log('❌ Tool ERROR:', event.data.tool_name, event.data);
-              }
-              break;
-            case 'llm':
-              if (action === 'start') {
-                console.log('🧠 LLM START');
+        // Update the live status bar based on the full event type
+        switch (event.type) {
+            case 'setup.repo.end':
+            case 'setup.sandbox.end':
+                setStatus(event.data.message);
+                break;
+            case 'llm.thought':
                 setStatus('Agent is thinking...');
-              } else if (action === 'end') {
-                console.log('🧠 LLM END');
-              }
-              break;
-            case 'task':
-              if (action === 'finish') {
-                console.log('🎉 Task FINISHED');
+                break;
+            case 'llm.tool_call.start':
+                setStatus(`Executing: ${event.data.tool_name}`);
+                break;
+            case 'llm.tool_call.end':
+                 setStatus(`Completed: ${event.data.tool_name}`);
+                break;
+            case 'task.finish':
                 setStatus('Task completed successfully!');
                 setStatusType('info');
-              } else if (action === 'end') {
-                console.log('🔚 Task END - closing connection');
+                break;
+            case 'task.end':
                 eventSource.close();
                 setIsRunning(false);
-              } else if (action === 'error') {
-                console.log('💥 Task ERROR:', event.data);
+                break;
+            case 'task.error':
                 setStatus(`Error: ${event.data.error || 'Unknown error'}`);
                 setStatusType('error');
                 eventSource.close();
                 setIsRunning(false);
-              }
-              break;
-            default:
-              console.log('❓ Unknown event category:', category);
-          }
-        } catch (error) {
-          console.error('💀 Error parsing event:', error, 'Raw data:', e.data);
+                break;
         }
       };
 
-      eventSource.onerror = (e) => {
-        console.error('EventSource error:', e);
+      eventSource.onerror = () => {
         setStatus('Connection error. The agent may have finished or an error occurred.');
         setStatusType('error');
         eventSource.close();
         setIsRunning(false);
       };
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setStatus(`Failed to start task: ${errorMessage}`);
@@ -334,18 +233,32 @@ export default function AgentTerminal() {
   const formatTimestamp = (timestamp?: string) => 
     timestamp ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false }) : '';
 
-  const RenderableEvent = ({ event }: { event: ProcessedEvent }) => {
+  // A memoized component for rendering a single event to prevent re-renders
+  const RenderableEvent = React.memo(({ event }: { event: ProcessedEvent }) => {
     const isExpanded = expandedEvents.has(event.key);
 
     const renderToolIcon = (toolName: string) => {
       if (toolName.includes('commit') || toolName.includes('push')) 
         return <GitCommitHorizontal size={16} />;
-      if (toolName.includes('observe') || toolName.includes('read')) 
+      if (toolName.includes('observe') || toolName.includes('read') || toolName.includes('write')) 
         return <Terminal size={16} />;
       return <Cog size={16} />;
     }
 
     switch (event.displayType) {
+      case 'LLM_THOUGHT':
+        return (
+          <div className="event thought-event">
+            <div className="event-header">
+                <span className='mr-2'><BrainCircuit size={16} className='text-purple-400' /></span>
+                <span className='event-message'>Agent thought:</span>
+                <span className="event-timestamp">{formatTimestamp(event.timestamp)}</span>
+            </div>
+            <div className='event-content markdown'>
+                <p>{event.text}</p>
+            </div>
+          </div>
+        )
       case 'TOOL_CALL': {
         const StatusIcon = {
           running: <Loader className="animate-spin text-info" size={16} />,
@@ -364,21 +277,13 @@ export default function AgentTerminal() {
             </div>
             {isExpanded && (
               <div className="tool-details">
-                <div className="tool-section">
-                  <h4 className="tool-section-header">Parameters</h4>
-                  <pre className="tool-section-content">{formatJson(event.params)}</pre>
-                </div>
+                <h4 className="tool-section-header">Parameters</h4>
+                <pre className="tool-section-content">{formatJson(event.params)}</pre>
                 {event.output && (
-                  <div className="tool-section">
-                    <h4 className="tool-section-header">Output</h4>
-                    <pre className="tool-section-content">{formatJson(event.output)}</pre>
-                  </div>
+                    <><h4 className="tool-section-header">Output</h4><pre className="tool-section-content">{formatJson(event.output)}</pre></>
                 )}
                 {event.error && (
-                  <div className="tool-section">
-                    <h4 className="tool-section-header text-error">Error</h4>
-                    <pre className="tool-section-content">{formatJson(event.error)}</pre>
-                  </div>
+                    <><h4 className="tool-section-header text-error">Error</h4><pre className="tool-section-content">{formatJson(event.error)}</pre></>
                 )}
               </div>
             )}
@@ -389,8 +294,7 @@ export default function AgentTerminal() {
       case 'ERROR': {
         return (
           <div className="event simple-event event-error">
-            <div className={`event-header ${event.content ? 'clickable' : ''}`} 
-                 onClick={() => event.content && toggleEventExpansion(event.key)}>
+            <div className={`event-header ${event.content ? 'clickable' : ''}`} onClick={() => event.content && toggleEventExpansion(event.key)}>
               {event.content && <ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} />}
               <span className='mr-2'><TriangleAlert size={16} className='text-error'/></span>
               <span>{event.message}</span>
@@ -416,7 +320,8 @@ export default function AgentTerminal() {
       default: 
         return null;
     }
-  };
+  });
+  RenderableEvent.displayName = 'RenderableEvent';
   
   return (
     <div>
@@ -426,28 +331,13 @@ export default function AgentTerminal() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Enter your task for the AI agent..."
           disabled={isRunning}
-          onKeyDown={(e) => { 
-            if (e.key === 'Enter' && !e.shiftKey) { 
-              e.preventDefault(); 
-              startTask(); 
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startTask(); }}}
         />
         <div className="button-group">
-          <button 
-            onClick={startTask} 
-            disabled={isRunning} 
-            className={`button button-primary ${isRunning ? 'button-loading' : ''}`}>
+          <button onClick={startTask} disabled={isRunning} className={`button button-primary ${isRunning ? 'button-loading' : ''}`}>
             {isRunning ? 'Running...' : 'Start Task'}
           </button>
-          <button 
-            onClick={() => { 
-              setRawEvents([]); 
-              eventCache.clear(); 
-              setStatus('Ready.'); 
-            }} 
-            disabled={isRunning} 
-            className="button button-secondary">
+          <button onClick={() => { setRawEvents([]); eventCache.clear(); runningTools.clear(); setStatus('Ready.'); }} disabled={isRunning} className="button button-secondary">
             Clear
           </button>
         </div>
