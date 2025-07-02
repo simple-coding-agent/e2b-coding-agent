@@ -1,0 +1,129 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  font-family: 'Courier New', monospace;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  padding: 20px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.input-section {
+  margin-bottom: 20px;
+  padding: 20px;
+  background: #2a2a2a;
+  border-radius: 8px;
+}
+
+.input-section textarea {
+  width: 100%;
+  height: 100px;
+  background: #1a1a1a;
+  color: white;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 10px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.input-section button {
+  margin-top: 10px;
+  padding: 10px 20px;
+  background: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.input-section button:hover {
+  background: #0052a3;
+}
+
+.input-section button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.terminal {
+  background: #0f0f0f;
+  border: 1px solid #333;
+  border-radius: 8px;
+  min-height: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.event {
+  margin: 10px 0;
+  padding: 10px;
+  border-left: 4px solid #555;
+  background: #1a1a1a;
+  border-radius: 4px;
+}
+
+.event-header {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.event-type {
+  font-weight: bold;
+  margin-right: 10px;
+}
+
+.event-tool {
+  color: #ffa500;
+  margin-right: 10px;
+}
+
+.event-timestamp {
+  float: right;
+  color: #666;
+}
+
+.event-data {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-top: 5px;
+}
+
+/* Event type specific colors */
+.event.task_started { border-color: #4CAF50; }
+.event.tool_start { border-color: #2196F3; }
+.event.tool_complete { border-color: #4CAF50; }
+.event.tool_error { border-color: #f44336; }
+.event.llm_response { border-color: #FF9800; }
+.event.iteration_start { border-color: #9C27B0; }
+.event.system_info { border-color: #607D8B; }
+.event.error { border-color: #f44336; background: #2a1a1a; }
+.event.final_response { border-color: #4CAF50; background: #1a2a1a; }
+
+.iteration-header {
+  background: #2a2a2a;
+  padding: 10px;
+  margin: 15px 0 5px 0;
+  border-radius: 4px;
+  font-weight: bold;
+  color: #9C27B0;
+}
+
+.status {
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  background: #2a2a2a;
+  text-align: center;
+}
