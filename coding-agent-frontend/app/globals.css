@@ -13,7 +13,7 @@
   --fg-200: #71717a;
   
   --border: #27272a;
-  --radius: 0.5rem; /* Slightly larger radius for a softer look */
+  --radius: 0.5rem;
 
   /* Accent Color (Orange) */
   --accent: rgb(229, 123, 0);
@@ -27,17 +27,12 @@
   --info: #3b82f6;
 
   /* Element-specific Colors */
-  --purple: #a78bfa; /* For agent thoughts */
+  --purple: #a78bfa;
   --tool-color: #a78bfa;
 }
 
 /* --- Global Resets & Base Styles --- */
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
+* { box-sizing: border-box; padding: 0; margin: 0; }
 body {
   font-family: 'IBM Plex Sans', sans-serif;
   background: var(--bg);
@@ -55,132 +50,138 @@ body {
 /* --- Keyframes --- */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: 0.7; } }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
 
-/* --- NEW: Main App Layout --- */
+/* @keyframes fadeIn { 
+  from { opacity: 0; } 
+  to   { opacity: 1; } 
+}
+@keyframes fadeOut { 
+  from { opacity: 1; transform: translateY(0); } 
+  to   { opacity: 0; transform: translateY(10px); } 
+}  */
+
+/* --- App Layout --- */
 .app-container {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   padding: 2rem;
 }
-
-.header {
-  text-align: center;
-  margin-bottom: 2rem;
-  flex-shrink: 0; /* Prevent header from shrinking */
-}
-
-.header h1 {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 2.25rem;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.25rem;
-}
-
-.header p {
-  color: var(--fg-100);
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
+.header { text-align: center; margin-bottom: 2rem; flex-shrink: 0; }
+.header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 2.25rem; font-weight: 500; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+.header p { color: var(--fg-100); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em; }
 .main-content {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
+  /* Space for the fixed input area in post-run state */
+  padding-bottom: 180px; 
 }
 
-/* --- Agent Terminal Wrapper --- */
+/* --- REVISED: Agent Terminal Wrapper --- */
 .agent-terminal-wrapper {
   width: 100%;
-  max-width: 900px; /* Constrain width */
+  max-width: 900px;
   display: flex;
   flex-direction: column;
   animation: fadeIn 0.5s ease-out;
 }
 
-/* Center content when idle */
+/* NEW: Styles for the initial 'idle' state, to center the input box */
 .agent-terminal-wrapper.idle {
-  justify-content: center;
-  flex-grow: 1;
+  justify-content: center; /* Vertically centers the input section */
+  flex-grow: 1;            /* Allows the wrapper to fill the main-content area */
 }
 
-/* --- Input Section --- */
+/* --- REVISED: Input Section (Now has two states) --- */
+
+/* POST-RUN State: Fixed to the bottom of the viewport */
 .input-section {
-  width: 100%;
-  background: var(--bg-100);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 1rem 2rem 1.5rem 2rem;
+  background: linear-gradient(to top, var(--bg) 70%, transparent 100%);
+  z-index: 50;
 }
 
+/* INITIAL IDLE State: Centered on the screen */
+.agent-terminal-wrapper.idle .input-section {
+  position: static; /* Override 'fixed' to be part of the normal document flow */
+  background: none;   /* Remove the gradient background */
+  padding: 0;         /* Remove padding used for the fixed-bottom layout */
+}
+
+.input-container {
+  position: relative; /* Context for the submit button */
+  width: 100%;
+  max-width: 900px;
+}
 .input-section textarea {
   width: 100%;
-  min-height: 100px;
-  background: var(--bg);
+  min-height: 120px;
+  background: var(--bg-100);
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: 1.5rem;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.9rem;
-  resize: vertical;
-  transition: border-color 0.2s ease;
+  resize: none;
+  transition: all 0.2s ease;
+  padding-right: 60px; /* Space for the submit button */
 }
-
 .input-section textarea:focus {
   outline: none;
   border-color: var(--accent);
+  background: var(--bg-200);
 }
-
-.button-group {
-  display: flex;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.button {
-  padding: 0.75rem 1.5rem;
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 0.875rem;
-  font-weight: 500;
+.submit-button {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 0.8rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
   border: none;
-  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.4rem;
+  font-weight: 400;
+  line-height: 1;
   cursor: pointer;
   transition: all 0.2s ease;
-  position: relative;
+  z-index: 10;
+}
+.submit-button:hover:not(:disabled) {
+  color: var(--fg100);
+}
+.submit-button:disabled {
+  background: transparent;
+  color: var(--fg-200);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.submit-button.loading {
+  animation: pulse 1.5s infinite;
+  color: var(--accent);
 }
 
-.button-primary { background: var(--accent); color: var(--accent-fg); }
-.button-primary:hover:not(:disabled) { background: var(--accent-dark); }
-.button-secondary { background: var(--bg-200); color: var(--fg); border: 1px solid var(--border); }
-.button-secondary:hover:not(:disabled) { background: var(--bg-300); }
-.button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.button-loading::after {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  top: 50%; left: 50%;
-  margin-left: -8px; margin-top: -8px;
-  border: 2px solid var(--accent-fg);
-  border-radius: 50%;
-  border-top-color: transparent;
-  animation: spin 0.8s linear infinite;
-}
-
-/* --- NEW: Status Toast --- */
+/* --- Status Toast --- */
 .status-toast {
   position: fixed;
   bottom: 1.5rem;
   right: 1.5rem;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -190,36 +191,24 @@ body {
   border-radius: var(--radius);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.875rem;
-  z-index: 100;
   box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
   animation: fadeIn 0.3s ease-out forwards;
 }
-
-.status-toast.exiting {
-  animation: fadeOut 0.3s ease-in forwards;
-}
-
-.status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
+.status-toast.exiting { animation: fadeOut 0.3s ease-in forwards; }
+.status-indicator { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .status-toast.info .status-indicator { background: var(--info); }
 .status-toast.success .status-indicator { background: var(--success); }
 .status-toast.error .status-indicator { background: var(--error); animation: none; }
 .status-toast:not(.error) .status-indicator { animation: pulse 2s infinite; }
 
-/* --- Terminal --- */
+/* --- REVISED: Terminal --- */
 .terminal-container {
   background: var(--bg-100);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  margin-bottom: 1.5rem; /* Space for reappearing input */
+  margin-bottom: 1.5rem; /* Space between terminal and where input would be in flow */
 }
-
 .terminal-header {
   display: flex;
   align-items: center;
@@ -231,127 +220,37 @@ body {
   font-size: 0.8rem;
   color: var(--fg-100);
 }
-
 .terminal {
   background: var(--bg);
-  min-height: 500px;
-  max-height: 70vh;
+  /* Let content determine height, but with a max to prevent pushing footer off-screen */
+  max-height: 75vh;
   overflow-y: auto;
   padding: 0.5rem;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.875rem;
 }
 
-.terminal-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 500px;
-  color: var(--fg-200);
-}
 
-/* --- Event Rendering --- */
-.event {
-  margin: 0.25rem 0.5rem;
-  animation: fadeIn 0.3s ease-out forwards;
-}
-
-.event-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border-radius: var(--radius);
-  transition: background-color 0.2s ease;
-  user-select: none;
-}
-
+/* --- Event Rendering --- (No changes below this line) */
+.event { margin: 0.25rem 0.5rem; animation: fadeIn 0.3s ease-out forwards; }
+.event-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; border-radius: var(--radius); transition: background-color 0.2s ease; user-select: none; }
 .clickable:hover { background: var(--bg-100); cursor: pointer; }
 .expand-icon { transition: transform 0.2s ease; }
 .expand-icon.expanded { transform: rotate(90deg); }
-
-.event-timestamp {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--fg-200);
-  white-space: nowrap;
-}
-
-/* --- THOUGHT Event (inline as requested) --- */
-.thought-event {
-  padding: 0.75rem;
-  border-radius: var(--radius);
-  background: rgba(167, 139, 250, 0.05); /* Very subtle purple background */
-  border: 1px solid rgba(167, 139, 250, 0.1);
-  color: var(--fg-100);
-}
-.thought-event .event-header {
-  padding: 0;
-  margin-bottom: 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--purple);
-}
-.thought-event .event-content p {
-  margin: 0;
-  white-space: pre-wrap;
-  line-height: 1.6;
-  color: var(--fg);
-}
-
-
-/* --- TOOL_CALL Event --- */
-.tool-call-event .event-header {
-  border: 1px solid var(--border);
-  background: var(--bg-100);
-  border-left-width: 3px;
-}
+.event-timestamp { margin-left: auto; font-size: 0.75rem; color: var(--fg-200); white-space: nowrap; }
+.thought-event { padding: 0.75rem; border-radius: var(--radius); background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.1); color: var(--fg-100); }
+.thought-event .event-header { padding: 0; margin-bottom: 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--purple); }
+.thought-event .event-content p { margin: 0; white-space: pre-wrap; line-height: 1.6; color: var(--fg); }
+.tool-call-event .event-header { border: 1px solid var(--border); background: var(--bg-100); border-left-width: 3px; }
 .tool-call-event.status-running .event-header { border-left-color: var(--info); }
 .tool-call-event.status-completed .event-header { border-left-color: var(--success); }
 .tool-call-event.status-error .event-header { border-left-color: var(--error); }
 .event-tool { color: var(--tool-color); font-weight: 500; }
 .tool-icon, .tool-status-icon { display: flex; align-items: center; justify-content: center; }
-
-/* -- Other Events (Simple) -- */
-.simple-event {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8rem;
-  color: var(--fg-100);
-}
-.simple-event .event-header {
-  width: 100%;
-  padding: 0;
-}
+.simple-event { display: flex; align-items: center; padding: 0.5rem 0.75rem; font-size: 0.8rem; color: var(--fg-100); }
+.simple-event .event-header { width: 100%; padding: 0; }
 .simple-event.event-error .event-header { color: var(--error); }
-
-/* Expanded Details */
-.tool-details, .event-data {
-  margin: 0.5rem 0.75rem 0.75rem 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.85rem;
-  line-height: 1.6;
-}
-pre, .tool-section-content {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.tool-section { margin-top: 0.75rem; }
-.tool-section-header {
-  font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
-  color: var(--fg-100); margin-bottom: 0.5rem; padding-left: 0.25rem;
-}
-
-
-/* --- Text Color Utilities --- */
-.text-success { color: var(--success); }
-.text-error { color: var(--error); }
-.text-info { color: var(--info); }
-.text-purple-400 { color: var(--purple); }
+.tool-details, .event-data { margin: 0.5rem 0.75rem 0.75rem 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.85rem; line-height: 1.6; }
+pre, .tool-section-content { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.tool-section-header { font-size: 0.7rem; font-weight: 500; text-transform: uppercase; color: var(--fg-100); margin-bottom: 0.5rem; padding-left: 0.25rem; }
+.text-success { color: var(--success); } .text-error { color: var(--error); } .text-info { color: var(--info); }
