@@ -43,7 +43,6 @@ class BaseTool(ABC):
         pass
 
 
-
 class ObserveRepoStructure(BaseTool):
     name = "observe_repo_structure"
     function_schema = {
@@ -73,9 +72,8 @@ class ObserveRepoStructure(BaseTool):
         self.repo = repo
     
     def execute(self, max_depth: int, show_hidden: bool):
-        # Emit start event
-        self.emit_event("tool_start", {
-            "action": "observing_repository_structure",
+        # Emit start event with parameters
+        self.emit_event("start", {
             "max_depth": max_depth,
             "show_hidden": show_hidden
         })
@@ -83,18 +81,17 @@ class ObserveRepoStructure(BaseTool):
         try:
             structure = self.repo.observe_repo_structure(max_depth=max_depth, show_hidden=show_hidden)
             
-            # Emit success event
-            self.emit_event("tool_complete", {
-                "action": "repository_structure_observed",
+            # Emit end event with results only
+            self.emit_event("end", {
                 "structure_preview": structure[:1000] + "..." if len(structure) > 1000 else structure,
-                "total_length": len(structure)
+                "total_length": len(structure),
+                "lines_count": len(structure.split('\n'))
             })
             
             return structure
         except Exception as e:
             # Emit error event
-            self.emit_event("tool_error", {
-                "action": "observing_repository_structure",
+            self.emit_event("error", {
                 "error": str(e)
             })
             raise
@@ -125,21 +122,23 @@ class ReadFile(BaseTool):
         self.repo = repo
     
     def execute(self, file_path: str):
+        # Emit start event with parameters
         self.emit_event("start", {"file_path": file_path})
         
         try:
             content = self.repo.read_file(file_path=file_path)
             
-            # Simplified payload, removed redundant "action"
+            # Emit end event with results only
             self.emit_event("end", {
-                "file_path": file_path,
                 "content_preview": content[:500] + "..." if len(content) > 500 else content,
                 "content_length": len(content),
+                "lines_count": len(content.split('\n')),
+                "file_type": file_path.split('.')[-1] if '.' in file_path else "unknown"
             })
             
             return content
         except Exception as e:
-            self.emit_event("error", {"file_path": file_path, "error": str(e)})
+            self.emit_event("error", {"error": str(e)})
             raise
 
 
@@ -172,7 +171,7 @@ class WriteFile(BaseTool):
         self.repo = repo
     
     def execute(self, file_path: str, content: str):
-        # Emit standardized 'start' event
+        # Emit start event with parameters
         self.emit_event("start", {
             "file_path": file_path,
             "content_length": len(content),
@@ -182,20 +181,17 @@ class WriteFile(BaseTool):
         try:
             result = self.repo.write_file(file_path=file_path, content=content)
             
-            # Emit standardized 'end' event
+            # Emit end event with results only
             self.emit_event("end", {
-                "file_path": file_path,
-                "content_length": len(content),
-                "content_preview": content[:200] + "..." if len(content) > 200 else content
+                "status": "file_written",
+                "content_preview": content[:200] + "..." if len(content) > 200 else content,
+                "bytes_written": len(content.encode('utf-8')),
+                "file_type": file_path.split('.')[-1] if '.' in file_path else "unknown"
             })
             
             return result
         except Exception as e:
-            # Emit standardized 'error' event
-            self.emit_event("error", {
-                "file_path": file_path,
-                "error": str(e)
-            })
+            self.emit_event("error", {"error": str(e)})
             raise
 
 
@@ -227,7 +223,7 @@ class DeleteFiles(BaseTool):
         self.repo = repo
     
     def execute(self, file_paths: list[str]):
-        # Emit standardized 'start' event
+        # Emit start event with parameters
         self.emit_event("start", {
             "file_paths": file_paths,
             "file_count": len(file_paths)
@@ -236,19 +232,16 @@ class DeleteFiles(BaseTool):
         try:
             result = self.repo.delete_files(file_paths=file_paths)
             
-            # Emit standardized 'end' event
+            # Emit end event with results only
             self.emit_event("end", {
-                "file_paths": file_paths,
-                "file_count": len(file_paths)
+                "status": "files_deleted",
+                "deleted_count": len(file_paths),
+                "operation_result": result
             })
             
             return result
         except Exception as e:
-            # Emit standardized 'error' event
-            self.emit_event("error", {
-                "file_paths": file_paths,
-                "error": str(e)
-            })
+            self.emit_event("error", {"error": str(e)})
             raise
 
 
@@ -277,7 +270,7 @@ class CommitAndPush(BaseTool):
         self.repo = repo
     
     def execute(self, commit_message: str):
-        # Emit standardized 'start' event
+        # Emit start event with parameters
         self.emit_event("start", {
             "commit_message": commit_message
         })
@@ -285,19 +278,16 @@ class CommitAndPush(BaseTool):
         try:
             result = self.repo.commit_and_push_to_main(commit_message=commit_message)
             
-            # Emit standardized 'end' event
+            # Emit end event with results only
             self.emit_event("end", {
-                "commit_message": commit_message,
-                "result": result
+                "status": "committed_and_pushed",
+                "commit_result": result,
+                "message_length": len(commit_message)
             })
             
             return result
         except Exception as e:
-            # Emit standardized 'error' event
-            self.emit_event("error", {
-                "commit_message": commit_message,
-                "error": str(e)
-            })
+            self.emit_event("error", {"error": str(e)})
             raise
 
 
@@ -326,7 +316,7 @@ class FinishTask(BaseTool):
         self.agentic_loop = agentic_loop
     
     def execute(self, summary: str):
-        # Emit standardized 'start' event
+        # Emit start event with parameters
         self.emit_event("start", {
             "summary": summary
         })
@@ -342,17 +332,14 @@ class FinishTask(BaseTool):
                 f"{'='*60}\n"
             )
             
-            # Emit standardized 'end' event
+            # Emit end event with results only
             self.emit_event("end", {
-                "summary": summary,
-                "final_report": result
+                "status": "task_finished",
+                "final_report": result,
+                "summary_length": len(summary)
             })
             
             return result
         except Exception as e:
-            # Emit standardized 'error' event
-            self.emit_event("error", {
-                "summary": summary,
-                "error": str(e)
-            })
+            self.emit_event("error", {"error": str(e)})
             raise

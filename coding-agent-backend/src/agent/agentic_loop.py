@@ -47,7 +47,7 @@ class AgenticLoop:
         """
         Run the agentic loop asynchronously to support streaming.
         """
-        self.emit_event("loop_start", {
+        self.emit_event("agent.loop.start", {
             "query": self.initial_query,
             "max_iterations": self.max_iterations
         })
@@ -55,7 +55,7 @@ class AgenticLoop:
         while self.iteration_count < self.max_iterations and not self._should_stop:
             self.iteration_count += 1
             
-            self.emit_event("iteration_start", {
+            self.emit_event("agent.iteration.start", {
                 "iteration": self.iteration_count,
                 "max_iterations": self.max_iterations
             })
@@ -64,7 +64,7 @@ class AgenticLoop:
                 # Call the LLM
                 response, self.messages = self.llm_model.complete(self.messages)
                 
-                self.emit_event("llm_response", {
+                self.emit_event("agent.response", {
                     "iteration": self.iteration_count,
                     "response": response[:500] + "..." if len(response) > 500 else response,
                     "full_response": response
