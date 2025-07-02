@@ -163,11 +163,18 @@ async def run_agent_task(task_id: str, request: TaskRequest):
         )
         
         # Create event callback that adds to queue
-        async def event_callback(event):
-            await queue.put(event)
+        def sync_event_callback(event):
+            """Synchronous callback that creates async task"""
+            # Add tool name to tool events
+            if event.get('type') in ['tool_start', 'tool_complete', 'tool_error'] and 'tool' not in event:
+                # Extract tool name from the event data if available
+                tool_name = event.get('data', {}).get('tool_name', 'unknown')
+                event['tool'] = tool_name
+            asyncio.create_task(queue.put(event))
+
         
         # Set up event callback for the loop
-        loop.set_event_callback(lambda event: asyncio.create_task(event_callback(event)))
+        loop.set_event_callback(sync_event_callback)
         
         # Initialize tools
         available_tools = {
@@ -179,10 +186,10 @@ async def run_agent_task(task_id: str, request: TaskRequest):
             "finish_task": FinishTask(loop)
         }
         
-        # Set event callbacks for all tools
-        for tool in available_tools.values():
+        # Set event callbacks for all tools - Fixed closure issue
+        for tool_name, tool in available_tools.items():
             if hasattr(tool, 'set_event_callback'):
-                tool.set_event_callback(lambda event: asyncio.create_task(event_callback(event)))
+                tool.set_event_callback(sync_event_callback)
         
         await queue.put({
             "type": "system_info",
@@ -192,6 +199,8 @@ async def run_agent_task(task_id: str, request: TaskRequest):
         
         # Create model
         model = OpenRouterModel(tools=available_tools, model=request.model)
+        if hasattr(model, 'set_event_callback'):
+            model.set_event_callback(sync_event_callback)
         loop.llm_model = model
         
         await queue.put({
@@ -230,6 +239,7 @@ async def run_agent_task(task_id: str, request: TaskRequest):
                 sbx.close()
         except:
             pass
+
 
 
 @app.get("/tasks")

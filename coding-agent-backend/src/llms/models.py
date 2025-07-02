@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from typing import Dict, List, Tuple, Optional
 import json
 from abc import ABC, abstractmethod
-
+from datetime import datetime
 
 from openai import OpenAI
 from .tools import BaseTool
@@ -29,12 +29,35 @@ class OpenRouterModel(BaseModel):
                              api_key=open_router_api_key)
         
         self.tools = tools
+        self._event_callback = None
+    
+    def set_event_callback(self, callback):
+        self._event_callback = callback
+    
+    def emit_event(self, event_type: str, data: dict):
+        if self._event_callback:
+            self._event_callback({
+                "type": event_type,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": data
+            })
 
     def complete(self, messages: list):
         """
         Sends a conversation to the OpenAI API and processes responses,
         including tool calls when required.
         """
+        if hasattr(self, '_event_callback') and self._event_callback:
+            # Emit when starting LLM call
+            self._event_callback({
+                "type": "llm_call_start",
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "model": self.model,
+                    "message_count": len(messages)
+                }
+            })
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -74,6 +97,16 @@ class OpenRouterModel(BaseModel):
         tool_call_responses = []
 
         for tool_call in tool_calls:
+            if hasattr(self, '_event_callback') and self._event_callback:
+                self._event_callback({
+                    "type": "tool_invocation",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "data": {
+                        "tool_name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments
+                    }
+                })
+
             tool_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
 

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from e2b_desktop import Sandbox
 from typing import Optional, Callable, Dict, Any
+from datetime import datetime
 
 class BaseTool(ABC):
     def __init__(self):
@@ -10,14 +11,15 @@ class BaseTool(ABC):
         """Set a callback function to be called when events occur"""
         self._event_callback = callback
     
-    def emit_event(self, event_type: str, data: Dict[str, Any]):
-        """Emit an event to the callback if one is set"""
+    def emit_event(self, event_type: str, data: dict):
         if self._event_callback:
             self._event_callback({
                 "type": event_type,
-                "tool": self.name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "tool": self.name,  # Add this line
                 "data": data
             })
+
     
     @property
     @abstractmethod
