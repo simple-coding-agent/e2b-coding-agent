@@ -9,11 +9,18 @@ import json
 from typing import Dict, Any
 import uuid
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
 from src.agent.agentic_loop import AgenticLoop
 from src.llms.tools import *
 from src.llms.models import OpenRouterModel
 from src.sandbox_handling.repo_handling import GithubRepo
+from e2b_code_interpreter import Sandbox
+
+# Load environment variables
+load_dotenv()
+E2B_API_KEY = os.environ.get("E2B_API_KEY")
 
 app = FastAPI()
 
@@ -33,7 +40,6 @@ class TaskRequest(BaseModel):
     query: str
     max_iterations: int = 20
     model: str = "openai/gpt-4.1"
-    repo_url: str
 
 class TaskResponse(BaseModel):
     task_id: str
@@ -56,14 +62,19 @@ async def event_generator(task_id: str):
             break
         
         # Send queued events
-        while not queue.empty():
-            event = await queue.get()
+        try:
+            # Wait for events with a timeout
+            event = await asyncio.wait_for(queue.get(), timeout=1.0)
             yield f"data: {json.dumps(event)}\n\n"
+        except asyncio.TimeoutError:
+            # Send keepalive
+            yield f"data: {json.dumps({'type': 'keepalive', 'data': {}})}\n\n"
         
         await asyncio.sleep(0.1)
     
     # Clean up
-    del active_tasks[task_id]
+    if task_id in active_tasks:
+        del active_tasks[task_id]
 
 
 @app.post("/tasks", response_model=TaskResponse)
@@ -99,6 +110,8 @@ async def get_task_events(task_id: str):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
         }
     )
 
@@ -109,8 +122,38 @@ async def run_agent_task(task_id: str, request: TaskRequest):
     queue = task['event_queue']
     
     try:
-        # Initialize GitHub repo
-        repo = GithubRepo(request.repo_url)
+        # Send initial event
+        await queue.put({
+            "type": "task_started",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "task_id": task_id,
+                "query": request.query,
+                "max_iterations": request.max_iterations,
+                "model": request.model
+            }
+        })
+        
+        # Initialize sandbox and repo
+        await queue.put({
+            "type": "system_info",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"message": "Initializing sandbox and repository..."}
+        })
+        
+        sbx = Sandbox(timeout=1200)
+        repo = GithubRepo(
+            repo_name="playground_repo",
+            repo_user="simple-coding-agent",
+            sandbox=sbx
+        )
+        repo.clone_repo_and_auth()
+        
+        await queue.put({
+            "type": "system_info",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"message": "Repository cloned and authenticated successfully"}
+        })
         
         # Create the agentic loop
         loop = AgenticLoop(
@@ -123,7 +166,7 @@ async def run_agent_task(task_id: str, request: TaskRequest):
         async def event_callback(event):
             await queue.put(event)
         
-        # Set up event callback
+        # Set up event callback for the loop
         loop.set_event_callback(lambda event: asyncio.create_task(event_callback(event)))
         
         # Initialize tools
@@ -138,11 +181,24 @@ async def run_agent_task(task_id: str, request: TaskRequest):
         
         # Set event callbacks for all tools
         for tool in available_tools.values():
-            tool.set_event_callback(lambda event: asyncio.create_task(event_callback(event)))
+            if hasattr(tool, 'set_event_callback'):
+                tool.set_event_callback(lambda event: asyncio.create_task(event_callback(event)))
+        
+        await queue.put({
+            "type": "system_info",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"message": f"Initializing {request.model} model with tools..."}
+        })
         
         # Create model
         model = OpenRouterModel(tools=available_tools, model=request.model)
         loop.llm_model = model
+        
+        await queue.put({
+            "type": "system_info",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"message": "Starting agent loop..."}
+        })
         
         # Run the loop
         final_response, conversation_history = await loop.run_async()
@@ -150,23 +206,48 @@ async def run_agent_task(task_id: str, request: TaskRequest):
         # Send final event
         await queue.put({
             "type": "final_response",
+            "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "response": final_response,
-                "conversation_history": conversation_history
+                "total_iterations": loop.iteration_count
             }
         })
         
     except Exception as e:
         await queue.put({
             "type": "error",
+            "timestamp": datetime.utcnow().isoformat(),
             "data": {
-                "error": str(e)
+                "error": str(e),
+                "error_type": type(e).__name__
             }
         })
     finally:
         task['complete'] = True
+        # Clean up sandbox
+        try:
+            if 'sbx' in locals():
+                sbx.close()
+        except:
+            pass
+
+
+@app.get("/tasks")
+async def list_active_tasks():
+    """List all active tasks"""
+    return {
+        "active_tasks": [
+            {
+                "task_id": task_id,
+                "query": task["query"],
+                "status": task["status"],
+                "started_at": task["started_at"]
+            }
+            for task_id, task in active_tasks.items()
+        ]
+    }
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
