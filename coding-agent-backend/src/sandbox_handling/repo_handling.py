@@ -66,44 +66,75 @@ class GithubRepo:
 
 
     ### The rest of the functions is AI generated:
-    def observe_repo_structure(self, max_depth: int = 3) -> str:
+    def observe_repo_structure(self, max_depth: int = 3, show_hidden: bool = False) -> str:
         """
-        Observe the repository structure up to a specified depth.
+        Observe the repository structure with detailed information.
         
         Args:
-            max_depth: Maximum depth to traverse in the directory tree (default: 3)
+            max_depth: Maximum depth to traverse in the directory tree
+            show_hidden: Whether to show hidden files/directories
             
         Returns:
-            A string representation of the repository structure
+            A detailed string representation of the repository structure
         """
-        print(f"Observing repository structure (max depth: {max_depth})...")
+        print(f"Observing repository structure (max depth: {max_depth}, show hidden: {show_hidden})...")
         
-        # Use 'find' command with max depth to get directory structure
-        command = f"find {self.repo} -maxdepth {max_depth} -type f -o -type d | sort"
+        # Build the find command based on parameters
+        if show_hidden:
+            command = f"cd {self.repo} && find . -maxdepth {max_depth} | sort"
+        else:
+            command = f"cd {self.repo} && find . -maxdepth {max_depth} -not -path '*/\\.*' | sort"
+        
         result = self.sandbox.commands.run(command)
         
         if result.exit_code != 0:
             return f"Error observing repository structure: {result.stderr}"
         
-        # Parse the output to create a tree-like structure
-        lines = result.stdout.strip().split('\n')
-        tree_output = []
+        # Get file sizes and types
+        tree_output = ["Repository Structure:"]
+        tree_output.append("=" * 50)
         
+        lines = result.stdout.strip().split('\n')
         for line in lines:
-            # Calculate depth based on path separators
-            depth = line.count('/') - self.repo.count('/')
-            indent = "  " * depth
+            if not line or line == '.':
+                continue
+                
+            # Remove leading './' if present
+            clean_path = line[2:] if line.startswith('./') else line
             
-            # Get the basename of the path
-            basename = line.split('/')[-1]
+            # Get file info
+            stat_command = f"cd {self.repo} && stat -c '%s' '{line}' 2>/dev/null || echo 'N/A'"
+            stat_result = self.sandbox.commands.run(stat_command)
             
-            # Check if it's a directory by looking for files with this prefix
-            is_dir = any(l.startswith(line + '/') for l in lines)
-            
-            if is_dir:
-                tree_output.append(f"{indent}{basename}/")
-            else:
-                tree_output.append(f"{indent}{basename}")
+            if stat_result.exit_code == 0 and stat_result.stdout.strip() != 'N/A':
+                size = stat_result.stdout.strip()
+                
+                # Check if directory
+                is_dir_command = f"cd {self.repo} && test -d '{line}' && echo 'dir' || echo 'file'"
+                is_dir_result = self.sandbox.commands.run(is_dir_command)
+                is_dir = is_dir_result.stdout.strip() == 'dir'
+                
+                # Format output
+                depth = clean_path.count('/')
+                indent = "  " * depth
+                basename = clean_path.split('/')[-1] if '/' in clean_path else clean_path
+                
+                if is_dir:
+                    tree_output.append(f"{indent}{basename}/ (directory)")
+                else:
+                    # Convert size to human readable
+                    size_int = int(size)
+                    if size_int < 1024:
+                        size_str = f"{size_int}B"
+                    elif size_int < 1024 * 1024:
+                        size_str = f"{size_int/1024:.1f}KB"
+                    else:
+                        size_str = f"{size_int/(1024*1024):.1f}MB"
+                    
+                    tree_output.append(f"{indent}{basename} ({size_str})")
+        
+        tree_output.append("=" * 50)
+        tree_output.append(f"Total items: {len(lines) - 1}")
         
         return "\n".join(tree_output)
 
@@ -138,79 +169,4 @@ class GithubRepo:
             return f"Error reading file: {result.stderr}"
         
         return result.stdout
-
-    def observe_repo_structure_detailed(self, max_depth: int = 3, show_hidden: bool = False) -> str:
-        """
-        Observe the repository structure with detailed information.
-        
-        Args:
-            max_depth: Maximum depth to traverse in the directory tree (default: 3)
-            show_hidden: Whether to show hidden files/directories (default: False)
-            
-        Returns:
-            A detailed string representation of the repository structure
-        """
-        print(f"Observing detailed repository structure (max depth: {max_depth})...")
-        
-        # Build the find command based on parameters
-        if show_hidden:
-            # Show everything including hidden files
-            command = f"cd {self.repo} && find . -maxdepth {max_depth} | sort"
-        else:
-            # Exclude hidden files/directories (those starting with .)
-            # but not the current directory itself
-            command = f"cd {self.repo} && find . -maxdepth {max_depth} -not -path '*/\\.*' | sort"
-        
-        result = self.sandbox.commands.run(command)
-        
-        if result.exit_code != 0:
-            return f"Error observing repository structure: {result.stderr}"
-        
-        # Get file sizes and types
-        tree_output = ["Repository Structure:"]
-        tree_output.append("=" * 50)
-        
-        lines = result.stdout.strip().split('\n')
-        for line in lines:
-            if not line or line == '.':
-                continue
-                
-            # Remove leading './' if present
-            clean_path = line[2:] if line.startswith('./') else line
-            
-            # Get file info
-            stat_command = f"cd {self.repo} && stat -c '%s %Y' '{line}' 2>/dev/null || echo 'N/A N/A'"
-            stat_result = self.sandbox.commands.run(stat_command)
-            
-            if stat_result.exit_code == 0 and stat_result.stdout.strip() != 'N/A N/A':
-                size, mtime = stat_result.stdout.strip().split()
-                
-                # Check if directory
-                is_dir_command = f"cd {self.repo} && test -d '{line}' && echo 'dir' || echo 'file'"
-                is_dir_result = self.sandbox.commands.run(is_dir_command)
-                is_dir = is_dir_result.stdout.strip() == 'dir'
-                
-                # Format output
-                depth = clean_path.count('/')
-                indent = "  " * depth
-                basename = clean_path.split('/')[-1] if '/' in clean_path else clean_path
-                
-                if is_dir:
-                    tree_output.append(f"{indent}{basename}/ (directory)")
-                else:
-                    # Convert size to human readable
-                    size_int = int(size)
-                    if size_int < 1024:
-                        size_str = f"{size_int}B"
-                    elif size_int < 1024 * 1024:
-                        size_str = f"{size_int/1024:.1f}KB"
-                    else:
-                        size_str = f"{size_int/(1024*1024):.1f}MB"
-                    
-                    tree_output.append(f"{indent}{basename} ({size_str})")
-        
-        tree_output.append("=" * 50)
-        tree_output.append(f"Total items: {len(lines) - 1}")
-        
-        return "\n".join(tree_output)
 
