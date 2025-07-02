@@ -1,12 +1,14 @@
+// page.tsx
 import AgentTerminal from '../components/AgentTerminal'
 import './globals.css'
 
 export default function Home() {
   return (
     <div className="container">
-      <h1 style={{ marginBottom: '20px', textAlign: 'center' }}>
-        AI Coding Agent
-      </h1>
+      <header className="header">
+        <h1>AI Coding Agent</h1>
+        <p>Intelligent Task Automation</p>
+      </header>
       <AgentTerminal />
     </div>
   )

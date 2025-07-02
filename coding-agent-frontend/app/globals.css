@@ -1,3 +1,37 @@
+/* globals.css */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap');
+
+:root {
+  /* Core Colors */
+  --bg: #0a0a0b;
+  --bg-100: #121214;
+  --bg-200: #1a1a1d;
+  --bg-300: #252529;
+
+  --fg: #e4e4e7;
+  --fg-100: #a1a1aa;
+  --fg-200: #71717a;
+  
+  --border: #27272a;
+  --radius: 0.375rem;
+
+  /* Accent Color (NEW ORANGE) */
+  --accent: rgb(229, 123, 0);       /* The requested orange */
+  --accent-dark: rgb(204, 110, 0);   /* A darker shade for hover */
+  --accent-fg: #ffffff;              /* White text for good contrast on orange */
+
+  /* Semantic Colors */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+
+  /* Element-specific Colors */
+  --llm-color: var(--warning);
+  --tool-color: #a78bfa; /* A pleasing violet for tools */
+}
+
+/* --- Global Resets & Base Styles --- */
 * {
   box-sizing: border-box;
   padding: 0;
@@ -5,125 +39,274 @@
 }
 
 body {
-  font-family: 'Courier New', monospace;
-  background-color: #1a1a1a;
-  color: #ffffff;
-  padding: 20px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-300); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-200); }
 
+/* --- Keyframes --- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.6; } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- Input Section --- */
 .input-section {
-  margin-bottom: 20px;
-  padding: 20px;
-  background: #2a2a2a;
-  border-radius: 8px;
+  background: var(--bg-100);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
 }
 
 .input-section textarea {
   width: 100%;
-  height: 100px;
-  background: #1a1a1a;
-  color: white;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 10px;
-  font-family: inherit;
+  min-height: 100px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
   resize: vertical;
+  transition: border-color 0.2s ease;
 }
 
-.input-section button {
-  margin-top: 10px;
-  padding: 10px 20px;
-  background: #0066cc;
-  color: white;
+.input-section textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.button {
+  padding: 0.75rem 1.5rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: pointer;
-  font-family: inherit;
+  transition: all 0.2s ease;
+  position: relative;
 }
 
-.input-section button:hover {
-  background: #0052a3;
+.button-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
-.input-section button:disabled {
-  background: #666;
+.button-primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+.button-secondary {
+  background: var(--bg-200);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--bg-300);
+}
+
+.button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.terminal {
-  background: #0f0f0f;
-  border: 1px solid #333;
-  border-radius: 8px;
-  min-height: 500px;
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 20px;
+.button-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid var(--accent-fg);
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
 }
 
+/* --- Status Bar --- */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: var(--bg-100);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.875rem;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 2s infinite;
+}
+
+.status-bar.error .status-indicator {
+  background: var(--error);
+  animation: none;
+}
+
+/* --- Terminal --- */
+.terminal-container {
+  background: var(--bg-100);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-200);
+  border-bottom: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--fg-100);
+}
+
+.terminal {
+  background: var(--bg);
+  min-height: 500px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0.5rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.875rem;
+}
+
+.terminal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 500px;
+  color: var(--fg-200);
+}
+
+/* --- Event Rendering --- */
 .event {
-  margin: 10px 0;
-  padding: 10px;
-  border-left: 4px solid #555;
-  background: #1a1a1a;
-  border-radius: 4px;
+  margin: 0.5rem;
+  animation: fadeIn 0.3s ease-out forwards;
 }
 
 .event-header {
-  color: #888;
-  font-size: 12px;
-  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  transition: background-color 0.2s ease;
+  user-select: none;
 }
 
-.event-type {
-  font-weight: bold;
-  margin-right: 10px;
+.clickable:hover {
+  background: var(--bg-100);
+  cursor: pointer;
 }
 
-.event-tool {
-  color: #ffa500;
-  margin-right: 10px;
+.expand-icon {
+  transition: transform 0.2s ease;
+}
+.expand-icon.expanded {
+  transform: rotate(90deg);
 }
 
 .event-timestamp {
-  float: right;
-  color: #666;
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--fg-200);
+  white-space: nowrap;
 }
 
-.event-data {
+.simple-event, .llm-event .event-header, .tool-call-event .event-header {
+  border: 1px solid var(--border);
+  background: var(--bg-100);
+}
+
+.llm-event .event-header, .tool-call-event .event-header, .simple-event {
+  border-left-width: 3px;
+}
+
+/* Event-specific border colors */
+.simple-event { border-color: var(--border); }
+.simple-event.event-error { border-left-color: var(--error); }
+.llm-event .event-header { border-left-color: var(--llm-color); }
+.tool-call-event.status-running .event-header { border-left-color: var(--info); }
+.tool-call-event.status-completed .event-header { border-left-color: var(--success); }
+.tool-call-event.status-error .event-header { border-left-color: var(--error); }
+
+
+/* Event Icons */
+.event-tool {
+  color: var(--tool-color);
+  font-weight: 500;
+}
+.tool-icon, .tool-status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Expanded Tool/LLM Details */
+.tool-details, .event-data {
+  margin: 0.5rem 0.75rem 0.75rem 0.75rem; /* Margin for content */
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  animation: fadeIn 0.2s ease-out;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+pre, .tool-section-content {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  overflow-x: auto;
   white-space: pre-wrap;
-  word-wrap: break-word;
-  margin-top: 5px;
+  word-break: break-all;
 }
 
-/* Event type specific colors */
-.event.task_started { border-color: #4CAF50; }
-.event.tool_start { border-color: #2196F3; }
-.event.tool_complete { border-color: #4CAF50; }
-.event.tool_error { border-color: #f44336; }
-.event.llm_response { border-color: #FF9800; }
-.event.iteration_start { border-color: #9C27B0; }
-.event.system_info { border-color: #607D8B; }
-.event.error { border-color: #f44336; background: #2a1a1a; }
-.event.final_response { border-color: #4CAF50; background: #1a2a1a; }
-
-.iteration-header {
-  background: #2a2a2a;
-  padding: 10px;
-  margin: 15px 0 5px 0;
-  border-radius: 4px;
-  font-weight: bold;
-  color: #9C27B0;
+.tool-section {
+  margin-top: 0.75rem;
 }
 
-.status {
-  padding: 10px;
-  margin-bottom: 10px;
-  border-radius: 4px;
-  background: #2a2a2a;
-  text-align: center;
+.tool-section-header {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--fg-100);
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
 }
+
+/* --- Text Color Utilities from Lucide Icons --- */
+.text-success { color: var(--success); }
+.text-error { color: var(--error); }
+.text-info { color: var(--info); }
+.text-llm-color { color: var(--llm-color); }

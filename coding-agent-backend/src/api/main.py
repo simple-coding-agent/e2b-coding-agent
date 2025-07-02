@@ -39,53 +39,51 @@ active_tasks: Dict[str, Dict[str, Any]] = {}
 class TaskRequest(BaseModel):
     query: str
     max_iterations: int = 20
-    model: str = "openai/gpt-4.1"
+    model: str = "openai/gpt-4.1-turbo"
 
 class TaskResponse(BaseModel):
     task_id: str
 
 
 async def event_generator(task_id: str):
-    """Generate server-sent events for a specific task"""
+    """Generate server-sent events for a specific task using the new hierarchical event system."""
     task = active_tasks.get(task_id)
     if not task:
-        yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Task not found'}})}\n\n"
+        # REFACTORED: Use 'task.error' for consistency
+        yield f"data: {json.dumps({'type': 'task.error', 'timestamp': datetime.utcnow().isoformat(), 'data': {'message': 'Task not found'}})}\n\n"
         return
     
-    # Send events from the queue
     queue = task['event_queue']
     
     while True:
-        # Check if task is complete
-        if task.get('complete', False):
-            yield f"data: {json.dumps({'type': 'task_complete', 'data': {'task_id': task_id}})}\n\n"
+        # Check if the background task has marked itself as complete
+        if task.get('complete', False) and queue.empty():
             break
         
-        # Send queued events
         try:
             # Wait for events with a timeout
             event = await asyncio.wait_for(queue.get(), timeout=1.0)
             yield f"data: {json.dumps(event)}\n\n"
         except asyncio.TimeoutError:
-            # Send keepalive
-            yield f"data: {json.dumps({'type': 'keepalive', 'data': {}})}\n\n"
+            # REFACTORED: Use namespaced 'stream.keepalive' event
+            yield f"data: {json.dumps({'type': 'stream.keepalive', 'timestamp': datetime.utcnow().isoformat(), 'data': {}})}\n\n"
         
         await asyncio.sleep(0.1)
+
+    # NEW: Send a final 'task.end' event to signal the stream is closing gracefully.
+    yield f"data: {json.dumps({'type': 'task.end', 'timestamp': datetime.utcnow().isoformat(), 'data': {'task_id': task_id}})}\n\n"
     
-    # Clean up
+    # Clean up the task from memory
     if task_id in active_tasks:
         del active_tasks[task_id]
 
 
 @app.post("/tasks", response_model=TaskResponse)
 async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
-    """Create a new agent task"""
+    """Create a new agent task."""
     task_id = str(uuid.uuid4())
-    
-    # Create event queue for this task
     event_queue = asyncio.Queue()
     
-    # Store task info
     active_tasks[task_id] = {
         'id': task_id,
         'query': request.query,
@@ -95,88 +93,55 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
         'started_at': datetime.utcnow().isoformat()
     }
     
-    # Run the agent loop in background
     background_tasks.add_task(run_agent_task, task_id, request)
-    
     return TaskResponse(task_id=task_id)
 
 
 @app.get("/tasks/{task_id}/events")
 async def get_task_events(task_id: str):
-    """Stream events for a specific task"""
+    """Stream events for a specific task."""
     return StreamingResponse(
         event_generator(task_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no", # Important for Nginx proxying
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
         }
     )
 
 
 async def run_agent_task(task_id: str, request: TaskRequest):
-    """Run the agent loop for a specific task"""
+    """Run the agent loop for a specific task, emitting structured events."""
     task = active_tasks[task_id]
     queue = task['event_queue']
     
-    try:
-        # Send initial event
-        await queue.put({
-            "type": "task_started",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {
-                "task_id": task_id,
-                "query": request.query,
-                "max_iterations": request.max_iterations,
-                "model": request.model
-            }
-        })
-        
-        # Initialize sandbox and repo
-        await queue.put({
-            "type": "system_info",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {"message": "Initializing sandbox and repository..."}
-        })
-        
-        sbx = Sandbox(timeout=1200)
-        repo = GithubRepo(
-            repo_name="playground_repo",
-            repo_user="simple-coding-agent",
-            sandbox=sbx
-        )
-        repo.clone_repo_and_auth()
-        
-        await queue.put({
-            "type": "system_info",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {"message": "Repository cloned and authenticated successfully"}
-        })
-        
-        # Create the agentic loop
-        loop = AgenticLoop(
-            max_iterations=request.max_iterations,
-            llm_model=None,
-            initial_query=request.query
-        )
-        
-        # Create event callback that adds to queue
-        def sync_event_callback(event):
-            """Synchronous callback that creates async task"""
-            # Add tool name to tool events
-            if event.get('type') in ['tool_start', 'tool_complete', 'tool_error'] and 'tool' not in event:
-                # Extract tool name from the event data if available
-                tool_name = event.get('data', {}).get('tool_name', 'unknown')
-                event['tool'] = tool_name
-            asyncio.create_task(queue.put(event))
+    # Create event callback that puts events onto the task's async queue
+    def sync_event_callback(event):
+        asyncio.run_coroutine_threadsafe(queue.put(event), asyncio.get_running_loop())
 
+    try:
+        # REFACTORED: Use 'task.start'
+        await queue.put({
+            "type": "task.start",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": { "task_id": task_id, "query": request.query, "max_iterations": request.max_iterations, "model": request.model }
+        })
         
-        # Set up event callback for the loop
+        # REFACTORED: Replace 'system_info' with specific, structured setup events
+        await queue.put({"type": "setup.sandbox.start", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Initializing sandbox..."}})
+        sbx = Sandbox(timeout=1200)
+        await queue.put({"type": "setup.sandbox.end", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Sandbox initialized."}})
+        
+        await queue.put({"type": "setup.repo.start", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Cloning repository..."}})
+        repo = GithubRepo(repo_name="playground_repo", repo_user="simple-coding-agent", sandbox=sbx)
+        repo.clone_repo_and_auth()
+        await queue.put({"type": "setup.repo.end", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Repository cloned."}})
+        
+        loop = AgenticLoop(max_iterations=request.max_iterations, llm_model=None, initial_query=request.query)
         loop.set_event_callback(sync_event_callback)
         
-        # Initialize tools
         available_tools = {
             "observe_repo_structure": ObserveRepoStructure(repo),
             "read_file": ReadFile(repo),
@@ -186,65 +151,46 @@ async def run_agent_task(task_id: str, request: TaskRequest):
             "finish_task": FinishTask(loop)
         }
         
-        # Set event callbacks for all tools - Fixed closure issue
-        for tool_name, tool in available_tools.items():
+        for tool in available_tools.values():
             if hasattr(tool, 'set_event_callback'):
                 tool.set_event_callback(sync_event_callback)
         
-        await queue.put({
-            "type": "system_info",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {"message": f"Initializing {request.model} model with tools..."}
-        })
-        
-        # Create model
+        await queue.put({"type": "setup.model.start", "timestamp": datetime.utcnow().isoformat(), "data": {"message": f"Initializing {request.model} model..."}})
         model = OpenRouterModel(tools=available_tools, model=request.model)
         if hasattr(model, 'set_event_callback'):
             model.set_event_callback(sync_event_callback)
         loop.llm_model = model
+        await queue.put({"type": "setup.model.end", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Model initialized."}})
+
+        # REFACTORED: Use 'agent.loop.start'
+        await queue.put({"type": "agent.loop.start", "timestamp": datetime.utcnow().isoformat(), "data": {"message": "Agent is starting to work..."}})
         
-        await queue.put({
-            "type": "system_info",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {"message": "Starting agent loop..."}
-        })
-        
-        # Run the loop
+        # Run the main agent loop
         final_response, conversation_history = await loop.run_async()
         
-        # Send final event
+        # REFACTORED: Use 'task.finish' for successful completion
         await queue.put({
-            "type": "final_response",
+            "type": "task.finish",
             "timestamp": datetime.utcnow().isoformat(),
-            "data": {
-                "response": final_response,
-                "total_iterations": loop.iteration_count
-            }
+            "data": { "response": final_response, "total_iterations": loop.iteration_count }
         })
         
     except Exception as e:
+        import traceback
+        # REFACTORED: Use 'task.error' for exceptions
         await queue.put({
-            "type": "error",
+            "type": "task.error",
             "timestamp": datetime.utcnow().isoformat(),
-            "data": {
-                "error": str(e),
-                "error_type": type(e).__name__
-            }
+            "data": { "error": str(e), "error_type": type(e).__name__, "traceback": traceback.format_exc() }
         })
     finally:
+        # Mark the task as complete so the event_generator can clean up
         task['complete'] = True
-        # Clean up sandbox
-        try:
-            if 'sbx' in locals():
-                sbx.close()
-        except:
-            pass
-
 
 
 @app.get("/tasks")
 async def list_active_tasks():
-    """List all active tasks"""
+    """List all active tasks."""
     return {
         "active_tasks": [
             {
@@ -261,3 +207,4 @@ async def list_active_tasks():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
