@@ -23,7 +23,6 @@ type ProcessedEvent = {
 } & (
   | { displayType: 'TASK_LIFECYCLE'; icon: JSX.Element; message: string; }
   | { displayType: 'SETUP'; icon: JSX.Element; message: string; }
-  | { displayType: 'LLM_THOUGHT'; message: string; content: any; }
   | { displayType: 'ERROR'; message: string; content: any; }
   | {
       displayType: 'TOOL_CALL';
@@ -44,8 +43,7 @@ export default function AgentTerminal() {
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const terminalRef = useRef<HTMLDivElement>(null);
   
-  // STABILITY FIX: Cache processed events to prevent re-computation and flickering.
-  // The `useRef` hook ensures the cache persists across renders.
+  // Cache processed events to prevent re-computation and flickering
   const eventCache = useRef(new Map<string, ProcessedEvent>()).current;
 
   // Auto-scroll to bottom of the terminal
@@ -58,15 +56,11 @@ export default function AgentTerminal() {
   // Process raw events into a stable list for rendering
   const processedEvents = useMemo(() => {
     rawEvents.forEach((event, index) => {
-      // Use a timestamp-based key for tool events to link start/end, and index-based for others.
-      let uniqueId = `event-${index}-${event.timestamp}`;
-
       const [category, action] = event.type.split('.');
       
-      // For tool events, we need to find the original start event and update it.
+      // For tool events, we need to find the original start event and update it
       if (category === 'tool' && (action === 'end' || action === 'error')) {
-        // Find the running tool event in the cache that matches the name.
-        // We iterate backwards to find the most recent running tool of that name.
+        // Find the running tool event in the cache that matches the name
         const cacheEntries = Array.from(eventCache.values()).reverse();
         const runningToolEntry = cacheEntries.find(p_event => 
           p_event.displayType === 'TOOL_CALL' && 
@@ -79,15 +73,16 @@ export default function AgentTerminal() {
           if (action === 'end') {
             runningToolEntry.output = event.data;
           } else {
-            runningToolEntry.error = event.data.error;
+            runningToolEntry.error = event.data;
           }
-          // We've mutated the cached object directly. No need to re-add to cache.
-          // This avoids creating a new object and preserves React's reference equality.
         }
         return; // Don't process end/error events as new list items
       }
 
-      // If the event is already cached, no need to re-process.
+      // Generate a unique ID for this event
+      let uniqueId = `event-${index}-${event.timestamp}`;
+      
+      // If the event is already cached, skip it
       if (eventCache.has(uniqueId)) return;
 
       let processed: ProcessedEvent | null = null;
@@ -95,29 +90,67 @@ export default function AgentTerminal() {
       switch (category) {
         case 'task':
           if (action === 'start') {
-            processed = { key: uniqueId, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started for: "${event.data.query}"`, raw: event, timestamp: event.timestamp };
+            processed = { 
+              key: uniqueId, 
+              displayType: 'TASK_LIFECYCLE', 
+              icon: <span className='text-success'>▶</span>, 
+              message: `Task started: "${event.data.query}"`, 
+              raw: event, 
+              timestamp: event.timestamp 
+            };
           } else if (action === 'finish') {
-            processed = { key: uniqueId, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle className="text-success" />, message: `Task finished successfully.`, raw: event, timestamp: event.timestamp };
+            processed = { 
+              key: uniqueId, 
+              displayType: 'TASK_LIFECYCLE', 
+              icon: <CheckCircle className="text-success" />, 
+              message: `Task completed successfully (${event.data.total_iterations} iterations)`, 
+              raw: event, 
+              timestamp: event.timestamp 
+            };
           } else if (action === 'error') {
-            processed = { key: uniqueId, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp };
+            processed = { 
+              key: uniqueId, 
+              displayType: 'ERROR', 
+              message: event.data.error, 
+              content: event.data, 
+              raw: event, 
+              timestamp: event.timestamp 
+            };
           }
           break;
+
         case 'setup':
-          const icon = action.endsWith('end') ? <Cog className="text-info" size={16} /> : <Loader className="animate-spin" size={16} />;
-          processed = { key: uniqueId, displayType: 'SETUP', icon, message: event.data.message, raw: event, timestamp: event.timestamp };
+          const icon = action.endsWith('end') ? 
+            <CheckCircle className="text-success" size={16} /> : 
+            <Loader className="animate-spin text-info" size={16} />;
+          processed = { 
+            key: uniqueId, 
+            displayType: 'SETUP', 
+            icon, 
+            message: event.data.message, 
+            raw: event, 
+            timestamp: event.timestamp 
+          };
           break;
+
         case 'agent':
-           processed = { key: uniqueId, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare size={16} />, message: "Agent loop started", raw: event, timestamp: event.timestamp };
-           break;
-        case 'llm':
-          if (action === 'tool_call') {
-            processed = { key: uniqueId, displayType: 'LLM_THOUGHT', message: `LLM plans to use tool: ${event.data.tool_name}`, content: event.data.arguments, raw: event, timestamp: event.timestamp };
+          if (action === 'loop' && event.type === 'agent.loop.start') {
+            processed = { 
+              key: uniqueId, 
+              displayType: 'TASK_LIFECYCLE', 
+              icon: <BotMessageSquare className="text-info" size={16} />, 
+              message: "Agent started working on the task", 
+              raw: event, 
+              timestamp: event.timestamp 
+            };
           }
+          // Remove LLM_THOUGHT processing - we're simplifying this
           break;
+
         case 'tool':
           if (action === 'start') {
-            // Use a unique key for the tool start itself
-            uniqueId = `tool-${event.timestamp}-${event.data.tool_name}`;
+            // Use a unique key based on tool name and timestamp for linking
+            uniqueId = `tool-${event.data.tool_name}-${event.timestamp}`;
             processed = {
               key: uniqueId,
               displayType: 'TOOL_CALL',
@@ -140,7 +173,7 @@ export default function AgentTerminal() {
   }, [rawEvents, eventCache]);
 
   const startTask = async () => {
-    // When starting a new task, we must clear the cache.
+    // Clear the cache when starting a new task
     eventCache.clear();
     
     if (!query.trim()) {
@@ -174,17 +207,25 @@ export default function AgentTerminal() {
           const event: RawEvent = JSON.parse(e.data);
           
           if (event.type === 'stream.keepalive') return;
+          
+          // Add event to state immediately
           setRawEvents(prev => [...prev, event]);
 
+          // Update status based on event type
           const [category, action] = event.type.split('.');
           switch (category) {
-            case 'setup': setStatus(event.data.message || 'Setting up environment...'); break;
-            case 'llm': 
-              if (action === 'start') setStatus('Agent is thinking...'); 
-              else if (action === 'tool_call') setStatus(`Agent plans to use: ${event.data.tool_name}`);
+            case 'setup': 
+              setStatus(event.data.message || 'Setting up environment...'); 
               break;
             case 'tool':
-              if (action === 'start') setStatus(`Executing tool: ${event.data.tool_name}`);
+              if (action === 'start') {
+                setStatus(`Executing: ${event.data.tool_name}`);
+              } else if (action === 'end') {
+                setStatus(`Completed: ${event.data.tool_name}`);
+              }
+              break;
+            case 'llm':
+              if (action === 'start') setStatus('Agent is thinking...');
               break;
             case 'task':
               if (action === 'finish') {
@@ -231,15 +272,18 @@ export default function AgentTerminal() {
   };
 
   const formatJson = (data: any) => JSON.stringify(data, null, 2);
-  const formatTimestamp = (timestamp?: string) => timestamp ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false }) : '';
+  const formatTimestamp = (timestamp?: string) => 
+    timestamp ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false }) : '';
 
   const RenderableEvent = ({ event }: { event: ProcessedEvent }) => {
     const isExpanded = expandedEvents.has(event.key);
 
     const renderToolIcon = (toolName: string) => {
-        if (toolName.includes('commit') || toolName.includes('push')) return <GitCommitHorizontal size={16} />;
-        if (toolName.includes('observe') || toolName.includes('read')) return <Terminal size={16} />;
-        return <Cog size={16} />;
+      if (toolName.includes('commit') || toolName.includes('push')) 
+        return <GitCommitHorizontal size={16} />;
+      if (toolName.includes('observe') || toolName.includes('read')) 
+        return <Terminal size={16} />;
+      return <Cog size={16} />;
     }
 
     switch (event.displayType) {
@@ -249,6 +293,7 @@ export default function AgentTerminal() {
           completed: <CheckCircle className="text-success" size={16} />,
           error: <XCircle className="text-error" size={16} />,
         }[event.status];
+        
         return (
           <div className={`event tool-call-event status-${event.status}`}>
             <div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}>
@@ -261,8 +306,8 @@ export default function AgentTerminal() {
             {isExpanded && (
               <div className="tool-details">
                 <div className="tool-section">
-                   <h4 className="tool-section-header">Parameters</h4>
-                   <pre className="tool-section-content">{formatJson(event.params)}</pre>
+                  <h4 className="tool-section-header">Parameters</h4>
+                  <pre className="tool-section-content">{formatJson(event.params)}</pre>
                 </div>
                 {event.output && (
                   <div className="tool-section">
@@ -281,33 +326,36 @@ export default function AgentTerminal() {
           </div>
         );
       }
-      case 'LLM_THOUGHT':
+      
       case 'ERROR': {
-        const isError = event.displayType === 'ERROR';
         return (
-          <div className={`event ${isError ? 'simple-event event-error' : 'llm-event'}`}>
-            <div className={`event-header ${event.content ? 'clickable' : ''}`} onClick={() => event.content && toggleEventExpansion(event.key)}>
-                {event.content && <ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} />}
-                <span className='mr-2'>{isError ? <TriangleAlert size={16} className='text-error'/> : <BotMessageSquare size={16} className='text-llm-color'/>}</span>
-                <span>{event.message}</span>
-                <span className="event-timestamp">{formatTimestamp(event.timestamp)}</span>
+          <div className="event simple-event event-error">
+            <div className={`event-header ${event.content ? 'clickable' : ''}`} 
+                 onClick={() => event.content && toggleEventExpansion(event.key)}>
+              {event.content && <ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} />}
+              <span className='mr-2'><TriangleAlert size={16} className='text-error'/></span>
+              <span>{event.message}</span>
+              <span className="event-timestamp">{formatTimestamp(event.timestamp)}</span>
             </div>
             {isExpanded && event.content && <pre className="event-data">{formatJson(event.content)}</pre>}
           </div>  
         );
       }
-       case 'SETUP':
-       case 'TASK_LIFECYCLE':
-          return (
-            <div className="event simple-event">
-              <div className="event-header">
-                <span className='mr-2'>{event.icon}</span>
-                <span>{event.message}</span>
-                <span className="event-timestamp">{formatTimestamp(event.timestamp)}</span>
-              </div>
+      
+      case 'SETUP':
+      case 'TASK_LIFECYCLE':
+        return (
+          <div className="event simple-event">
+            <div className="event-header">
+              <span className='mr-2'>{event.icon}</span>
+              <span>{event.message}</span>
+              <span className="event-timestamp">{formatTimestamp(event.timestamp)}</span>
             </div>
-          );
-      default: return null;
+          </div>
+        );
+        
+      default: 
+        return null;
     }
   };
   
@@ -315,23 +363,44 @@ export default function AgentTerminal() {
     <div>
       <div className="input-section">
         <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Enter your task for the AI agent..."
-            disabled={isRunning}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startTask(); }}}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Enter your task for the AI agent..."
+          disabled={isRunning}
+          onKeyDown={(e) => { 
+            if (e.key === 'Enter' && !e.shiftKey) { 
+              e.preventDefault(); 
+              startTask(); 
+            }
+          }}
         />
         <div className="button-group">
-          <button onClick={startTask} disabled={isRunning} className={`button button-primary ${isRunning ? 'button-loading' : ''}`}>{isRunning ? 'Running...' : 'Start Task'}</button>
-          <button onClick={() => { setRawEvents([]); eventCache.clear(); setStatus('Ready.'); }} disabled={isRunning} className="button button-secondary">Clear</button>
+          <button 
+            onClick={startTask} 
+            disabled={isRunning} 
+            className={`button button-primary ${isRunning ? 'button-loading' : ''}`}>
+            {isRunning ? 'Running...' : 'Start Task'}
+          </button>
+          <button 
+            onClick={() => { 
+              setRawEvents([]); 
+              eventCache.clear(); 
+              setStatus('Ready.'); 
+            }} 
+            disabled={isRunning} 
+            className="button button-secondary">
+            Clear
+          </button>
         </div>
       </div>
+      
       {status && (
         <div className={`status-bar ${statusType}`}>
           <div className="status-indicator" />
           <span>{status}</span>
         </div>
       )}
+      
       <div className="terminal-container">
         <div className="terminal-header"><Cloud size={16} /> Agent Stream</div>
         <div className="terminal" ref={terminalRef}>

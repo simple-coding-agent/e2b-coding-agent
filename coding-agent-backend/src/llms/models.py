@@ -78,33 +78,19 @@ class OpenRouterModel(BaseModel):
         # Process any tool calls requested by the model
         if response_message.tool_calls:
             tool_responses = self._handle_tool_calls(response_message.tool_calls)
-
             # Append tool responses to messages
             messages.extend(tool_responses)
-
-            # # Re-run the conversation with updated messages
-            # return self.complete(messages)
 
         return response_message.content, messages
 
     def _handle_tool_calls(self, tool_calls):
         """
         Handles execution of tool calls requested by the model.
-
-        Args:
-            tool_calls (list): List of tool calls requested by the model.
-
-        Returns:
-            list: List of responses from the executed tools.
         """
         tool_call_responses = []
 
         for tool_call in tool_calls:
-            self.emit_event("tool_call", {
-                "tool_name": tool_call.function.name,
-                "arguments": json.loads(tool_call.function.arguments)
-            })
-
+            # REMOVED: No longer emit llm.tool_call events since we're simplifying the display
             tool_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
 
@@ -117,8 +103,6 @@ class OpenRouterModel(BaseModel):
                     "name": tool_name,
                     "content": tool_response
                 })
-
-            # LLM hallucinated the tool 
             else:
                 print(f"The tool {tool_name} has been hallucinated by the LLM.")
                 tool_call_responses.append({
@@ -127,6 +111,5 @@ class OpenRouterModel(BaseModel):
                     "name": tool_name,
                     "content": f"The tool does not exist."
                 })
-
 
         return tool_call_responses
