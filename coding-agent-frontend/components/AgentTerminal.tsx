@@ -46,6 +46,11 @@ export default function AgentTerminal() {
   // Cache processed events to prevent re-computation and flickering
   const eventCache = useRef(new Map<string, ProcessedEvent>()).current;
 
+  // Add this near the top of your component
+  useEffect(() => {
+    console.log(`🔄 Component re-rendered. Raw events: ${rawEvents.length}, Processed events: ${processedEvents.length}`);
+  }, [rawEvents]);
+
   // Auto-scroll to bottom of the terminal
   useEffect(() => {
     if (terminalRef.current) {
@@ -55,11 +60,15 @@ export default function AgentTerminal() {
 
   // Process raw events into a stable list for rendering
   const processedEvents = useMemo(() => {
+    console.log(`🔄 Processing ${rawEvents.length} raw events`);
+    
     rawEvents.forEach((event, index) => {
       const [category, action] = event.type.split('.');
       
       // For tool events, we need to find the original start event and update it
       if (category === 'tool' && (action === 'end' || action === 'error')) {
+        console.log(`🔗 Looking for running tool to update: ${event.data.tool_name}`);
+        
         // Find the running tool event in the cache that matches the name
         const cacheEntries = Array.from(eventCache.values()).reverse();
         const runningToolEntry = cacheEntries.find(p_event => 
@@ -69,12 +78,20 @@ export default function AgentTerminal() {
         );
         
         if (runningToolEntry) {
+          console.log(`✨ Found and updating tool: ${event.data.tool_name} -> ${action}`);
           runningToolEntry.status = action === 'end' ? 'completed' : 'error';
           if (action === 'end') {
             runningToolEntry.output = event.data;
           } else {
             runningToolEntry.error = event.data;
           }
+        } else {
+          console.warn(`⚠️ Could not find running tool to update: ${event.data.tool_name}`);
+          console.log('Available cache entries:', cacheEntries.map(e => ({
+            type: e.displayType,
+            tool: e.displayType === 'TOOL_CALL' ? e.toolName : 'N/A',
+            status: e.displayType === 'TOOL_CALL' ? e.status : 'N/A'
+          })));
         }
         return; // Don't process end/error events as new list items
       }
@@ -83,12 +100,16 @@ export default function AgentTerminal() {
       let uniqueId = `event-${index}-${event.timestamp}`;
       
       // If the event is already cached, skip it
-      if (eventCache.has(uniqueId)) return;
+      if (eventCache.has(uniqueId)) {
+        console.log(`⏭️ Event already cached: ${uniqueId}`);
+        return;
+      }
 
       let processed: ProcessedEvent | null = null;
       
       switch (category) {
         case 'task':
+          console.log(`📋 Processing task event: ${action}`);
           if (action === 'start') {
             processed = { 
               key: uniqueId, 
@@ -120,6 +141,7 @@ export default function AgentTerminal() {
           break;
 
         case 'setup':
+          console.log(`⚙️ Processing setup event: ${action}`);
           const icon = action.endsWith('end') ? 
             <CheckCircle className="text-success" size={16} /> : 
             <Loader className="animate-spin text-info" size={16} />;
@@ -134,6 +156,7 @@ export default function AgentTerminal() {
           break;
 
         case 'agent':
+          console.log(`🤖 Processing agent event: ${action}`);
           if (action === 'loop' && event.type === 'agent.loop.start') {
             processed = { 
               key: uniqueId, 
@@ -151,6 +174,7 @@ export default function AgentTerminal() {
           if (action === 'start') {
             // Use a unique key based on tool name and timestamp for linking
             uniqueId = `tool-${event.data.tool_name}-${event.timestamp}`;
+            console.log(`🔧 Processing tool START: ${event.data.tool_name}, ID: ${uniqueId}`);
             processed = {
               key: uniqueId,
               displayType: 'TOOL_CALL',
@@ -165,11 +189,14 @@ export default function AgentTerminal() {
       }
       
       if (processed) {
+        console.log(`💾 Caching processed event: ${processed.key}`);
         eventCache.set(processed.key, processed);
       }
     });
     
-    return Array.from(eventCache.values());
+    const result = Array.from(eventCache.values());
+    console.log(`📊 Returning ${result.length} processed events`);
+    return result;
   }, [rawEvents, eventCache]);
 
   const startTask = async () => {
@@ -206,44 +233,76 @@ export default function AgentTerminal() {
         try {
           const event: RawEvent = JSON.parse(e.data);
           
-          if (event.type === 'stream.keepalive') return;
+          // ADD DETAILED LOGGING HERE
+          console.log(`🔥 Event received at ${new Date().toISOString()}:`, {
+            type: event.type,
+            timestamp: event.timestamp,
+            data: event.data
+          });
+          
+          if (event.type === 'stream.keepalive') {
+            console.log('⏰ Keepalive event - ignoring');
+            return;
+          }
           
           // Add event to state immediately
-          setRawEvents(prev => [...prev, event]);
+          console.log('📝 Adding event to state:', event.type);
+          setRawEvents(prev => {
+            const newEvents = [...prev, event];
+            console.log(`📊 Total events now: ${newEvents.length}`);
+            return newEvents;
+          });
 
           // Update status based on event type
           const [category, action] = event.type.split('.');
+          console.log(`🏷️ Event category: ${category}, action: ${action}`);
+          
           switch (category) {
             case 'setup': 
+              console.log('⚙️ Setup event:', event.data.message);
               setStatus(event.data.message || 'Setting up environment...'); 
               break;
             case 'tool':
               if (action === 'start') {
+                console.log('🔧 Tool START:', event.data.tool_name);
                 setStatus(`Executing: ${event.data.tool_name}`);
               } else if (action === 'end') {
+                console.log('✅ Tool END:', event.data.tool_name);
                 setStatus(`Completed: ${event.data.tool_name}`);
+              } else if (action === 'error') {
+                console.log('❌ Tool ERROR:', event.data.tool_name, event.data);
               }
               break;
             case 'llm':
-              if (action === 'start') setStatus('Agent is thinking...');
+              if (action === 'start') {
+                console.log('🧠 LLM START');
+                setStatus('Agent is thinking...');
+              } else if (action === 'end') {
+                console.log('🧠 LLM END');
+              }
               break;
             case 'task':
               if (action === 'finish') {
+                console.log('🎉 Task FINISHED');
                 setStatus('Task completed successfully!');
                 setStatusType('info');
               } else if (action === 'end') {
+                console.log('🔚 Task END - closing connection');
                 eventSource.close();
                 setIsRunning(false);
               } else if (action === 'error') {
+                console.log('💥 Task ERROR:', event.data);
                 setStatus(`Error: ${event.data.error || 'Unknown error'}`);
                 setStatusType('error');
                 eventSource.close();
                 setIsRunning(false);
               }
               break;
+            default:
+              console.log('❓ Unknown event category:', category);
           }
         } catch (error) {
-          console.error('Error parsing event:', error);
+          console.error('💀 Error parsing event:', error, 'Raw data:', e.data);
         }
       };
 

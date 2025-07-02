@@ -61,8 +61,8 @@ class AgenticLoop:
             })
             
             try:
-                # Call the LLM
-                response, self.messages = self.llm_model.complete(self.messages)
+                # Call the LLM - USE THE ASYNC VERSION!
+                response, self.messages = await self.llm_model.complete_async(self.messages)
                 
                 self.emit_event("agent.response", {
                     "iteration": self.iteration_count,
@@ -72,7 +72,7 @@ class AgenticLoop:
                 
                 # Check if we should stop
                 if self._should_stop:
-                    self.emit_event("loop_complete", {
+                    self.emit_event("agent.loop.complete", {
                         "reason": "task_finished",
                         "iterations": self.iteration_count
                     })
@@ -82,12 +82,11 @@ class AgenticLoop:
                 await asyncio.sleep(0.1)
                 
             except Exception as e:
-                self.emit_event("error", {
+                self.emit_event("agent.error", {
                     "iteration": self.iteration_count,
                     "error": str(e)
                 })
                 
-                # Add error to conversation
                 self.messages.append({
                     'role': 'system',
                     'content': f"An error occurred: {str(e)}. Please handle this appropriately."
@@ -98,7 +97,7 @@ class AgenticLoop:
         
         # Reached max iterations
         if not self._should_stop:
-            self.emit_event("max_iterations_reached", {
+            self.emit_event("agent.loop.max_iterations", {
                 "iterations": self.max_iterations
             })
             
@@ -108,7 +107,8 @@ class AgenticLoop:
             })
             
             try:
-                response, self.messages = self.llm_model.complete(self.messages)
+                # USE THE ASYNC VERSION HERE TOO!
+                response, self.messages = await self.llm_model.complete_async(self.messages)
                 return response, self.messages
             except:
                 return "Max iterations reached", self.messages
