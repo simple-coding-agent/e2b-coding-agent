@@ -95,6 +95,7 @@ export default function AgentTerminal() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [isTaskRunning, setIsTaskRunning] = useState(false);
+  // UPDATED: Default repo URL
   const [repoUrl, setRepoUrl] = useState<string>('https://github.com/simple-coding-agent/playground_repo');
   const [selectedModel, setSelectedModel] = useState('openai/gpt-4o');
   const [lastUsedModelId, setLastUsedModelId] = useState<string | null>(null);
@@ -266,20 +267,32 @@ export default function AgentTerminal() {
   RenderableEvent.displayName = 'RenderableEvent';
 
 
+  // --- REVISED: Initial Setup Screen ---
   if (sessionState !== 'SESSION_ACTIVE') {
     return (
       <div className="setup-container">
         <div className="setup-box">
-          <Github size={48} className="mb-4 text-gray-400" />
-          <h2 className="text-2xl font-semibold mb-2">Connect a Repository</h2>
-          <p className="text-gray-400 mb-6 text-center">Provide a GitHub URL to begin. The agent will fork the repository to your account if needed to enable commits.</p>
-          <div className="w-full flex items-center gap-2">
-            <Link size={20} className="text-gray-500 flex-shrink-0" />
-            <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo-name" className="setup-input" disabled={sessionState === 'CREATING_SESSION'}/>
+          <h2 className="setup-title">Connect a GitHub Repository</h2>
+          <p className="setup-subtitle">Provide a public URL to start a session.</p>
+          <div className="input-container">
+            <input
+              type="text"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="https://github.com/owner/repository-name"
+              className="repo-input"
+              disabled={sessionState === 'CREATING_SESSION'}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createSession(); }}}
+            />
+            <button
+              onClick={createSession}
+              disabled={sessionState === 'CREATING_SESSION'}
+              className={`submit-button ${sessionState === 'CREATING_SESSION' ? 'loading' : ''}`}
+              title="Start Session (Enter)"
+            >
+              {sessionState === 'CREATING_SESSION' ? <Loader className="animate-spin" size={20} /> : '>'}
+            </button>
           </div>
-          <button onClick={createSession} disabled={sessionState === 'CREATING_SESSION'} className="setup-button">
-            {sessionState === 'CREATING_SESSION' ? <Loader className="animate-spin" /> : 'Start Session'}
-          </button>
         </div>
       </div>
     );
@@ -287,11 +300,11 @@ export default function AgentTerminal() {
 
   return (
     <div className={`agent-terminal-wrapper`}>
+      {/* --- REVISED: Repo Status Bar (Icon Removed) --- */}
       {repoInfo && (
         <div className="repo-status-bar">
           <div className="repo-info">
-            <Github size={16} />
-            <span>Working on: <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
+            <span>Working on <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
           </div>
           {repoInfo.isFork && (
             <div className="fork-badge">
@@ -319,13 +332,11 @@ export default function AgentTerminal() {
         <div className="input-section">
           <div className="input-container">
             <div className="model-selector" ref={modelSelectorRef}>
-              {/* --- REVISED: Simplified Button --- */}
               <button
                 className="model-selector-trigger"
                 onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
                 disabled={isTaskRunning}
               >
-                {/* Icon removed for a simpler look */}
                 <span>{selectedModelName}</span>
                 <ChevronUp size={16} className={`model-selector-chevron ${isModelSelectorOpen ? 'open' : ''}`} />
               </button>
