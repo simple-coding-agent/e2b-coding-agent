@@ -81,8 +81,7 @@ async def create_session(request: SessionCreateRequest):
             is_fork=is_fork, 
         )
     except Exception as e:
-        if sandbox:
-            await asyncio.to_thread(sandbox.close)
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 

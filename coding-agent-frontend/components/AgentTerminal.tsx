@@ -64,7 +64,7 @@ export default function AgentTerminal() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [isTaskRunning, setIsTaskRunning] = useState(false);
-  const [repoUrl, setRepoUrl] = useState<string>('https://github.com/simple-coding-agent/playground_repo');
+  const [repoUrl, setRepoUrl] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState('openai/gpt-4o');
   const [lastUsedModelId, setLastUsedModelId] = useState<string | null>(null);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
@@ -160,7 +160,10 @@ export default function AgentTerminal() {
     setHasStartedFirstTask(true);
     setLastUsedModelId(selectedModel);
     
-    eventCache.clear(); runningTools.clear(); setRawEvents([]); setExpandedEvents(new Set());
+    // Preserve event history from previous runs, but clear state for the new task.
+    runningTools.clear();
+    setExpandedEvents(new Set());
+
     setIsTaskRunning(true);
     showStatus('Agent starting...', 'info');
 
@@ -186,12 +189,23 @@ export default function AgentTerminal() {
   const RenderableEvent = React.memo(({ event }: { event: ProcessedEvent }) => { const isExpanded = expandedEvents.has(event.key); const renderToolIcon = (toolName: string) => { if (toolName.includes('commit')) return <GitCommitHorizontal size={16} />; if (toolName.includes('observe') || toolName.includes('write')) return <Terminal size={16} />; return <Cog size={16} />; }; switch (event.displayType) { case 'LLM_THOUGHT': return (<div className="event thought-event"><div className="event-header"><span className='mr-2'><BrainCircuit size={16} /></span><span>Agent thought:</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div><div className='event-content'><p>{event.text}</p></div></div>); case 'TOOL_CALL': const StatusIcon = { running: <Loader className="animate-spin text-info" size={16} />, completed: <CheckCircle className="text-success" size={16} />, error: <XCircle className="text-error" size={16} />, }[event.status]; return (<div className={`event tool-call-event status-${event.status}`}><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className="tool-status-icon">{StatusIcon}</span><span className="tool-icon">{renderToolIcon(event.toolName)}</span><span className="event-tool">{event.toolName}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && (<div className="tool-details"><h4 className="tool-section-header">Parameters</h4><pre className="tool-section-content">{formatJson(event.params)}</pre>{event.output && (<><h4 className="tool-section-header">Output Preview</h4><pre className="tool-section-content">{event.output}</pre></>)}{event.error && (<><h4 className="tool-section-header text-error">Error</h4><pre className="tool-section-content">{formatJson(event.error)}</pre></>)}</div>)}</div>); case 'ERROR': return (<div className="event simple-event event-error"><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className='mr-2'><TriangleAlert size={16} /></span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && <pre className="event-data">{formatJson(event.content)}</pre>}</div>); case 'TASK_LIFECYCLE': return (<div className="event simple-event"><div className="event-header"><span className='mr-2'>{event.icon}</span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div></div>); default: return null; } });
   RenderableEvent.displayName = 'RenderableEvent';
 
+
   const renderRepoStatusBar = () => repoInfo && (
     <div className="repo-status-bar">
       <div className="repo-info">
-        <span>Working on <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
+        {!hasStartedFirstTask ? (
+          <>
+            <CheckCircle size={14} className="text-success" />
+            <span>
+              Repository <strong>{repoInfo.owner}/{repoInfo.name}</strong> {repoInfo.isFork ? 'forked and' : ''} clonned into the sandbox
+            </span>
+          </>
+        ) : (
+          <span>Working on <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
+        )}
       </div>
-      {repoInfo.isFork && (
+      {/* The fork badge is only shown when a task is active */}
+      {hasStartedFirstTask && repoInfo.isFork && (
         <div className="fork-badge">
           <GitCommitHorizontal size={14} />
           <span>Fork</span>
@@ -216,7 +230,6 @@ export default function AgentTerminal() {
                   {group.models.map(model => (
                     <div key={model.id} className={`model-option ${selectedModel === model.id ? 'selected' : ''}`} onClick={() => { setSelectedModel(model.id); setIsModelSelectorOpen(false); }}>
                       {model.name}
-                      {selectedModel === model.id && <CheckCircle size={14} />}
                     </div>
                   ))}
                 </div>
@@ -256,8 +269,6 @@ export default function AgentTerminal() {
     return (
       <div className="setup-container">
         <div className="setup-box">
-          <h2 className="setup-title">Connect a GitHub Repository</h2>
-          <p className="setup-subtitle">Provide a public URL to start a session.</p>
           <div className="input-container">
             <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repository-name" className="repo-input" disabled={sessionState === 'CREATING_SESSION'} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createSession(); }}} />
             <button onClick={createSession} disabled={sessionState === 'CREATING_SESSION'} className={`submit-button ${sessionState === 'CREATING_SESSION' ? 'loading' : ''}`} title="Start Session (Enter)">
