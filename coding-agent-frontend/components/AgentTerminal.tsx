@@ -1,11 +1,9 @@
-// components/AgentTerminal.tsx
-
 'use client'
 
 import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
 import {
   CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight, ChevronUp,
-  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit, Github, Server, Link
+  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit
 } from 'lucide-react'
 
 // --- Type Definitions ---
@@ -119,7 +117,7 @@ export default function AgentTerminal() {
     filteredRawEvents.forEach((event, index) => {
       let key = `event-${index}-${event.timestamp}`; if (eventCache.has(key)) return;
       let processed: ProcessedEvent | null = null; let shouldCache = true;
-      switch (event.type) { case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp }; break; case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; }
+      switch (event.type) { case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle size={16} className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp }; break; case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; }
       if (processed && shouldCache) { eventCache.set(processed.key, processed); }
     });
     return Array.from(eventCache.values());
@@ -263,7 +261,6 @@ export default function AgentTerminal() {
     </div>
   );
 
-
   // --- Main Render Logic ---
   if (sessionState !== 'SESSION_ACTIVE') {
     return (
@@ -291,7 +288,7 @@ export default function AgentTerminal() {
         <div className="main-view-container">
           {renderRepoStatusBar()}
           {renderTerminal()}
-          {renderInputArea()} {/* CHANGED: Input area is now always rendered */}
+          {renderInputArea()} {}
         </div>
       )}
       {status && (<div className={`status-toast ${status.type} ${isExiting ? 'exiting' : ''}`}><div className="status-indicator" /><span>{status.message}</span></div>)}

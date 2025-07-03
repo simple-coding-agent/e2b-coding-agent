@@ -18,7 +18,7 @@ class AgenticLoop:
         self.system_prompt = """
         You are a coding agent which accomplishes a user tasks. You are always working with a repository.
         You can observe and control the repository using the tools. 
-        Rules: - You will always receive a single user message. Work autonomously to finish the task, never ask for clarifications. 
+        Rules: - You will always receive a single user message. Work autonomously to finish the task, never ask for clarifications. If there is no task, use the finish task tool.
         Once you are finished with the task, use the finish_task tool call.
         - You are encouraged to use planning steps, when the task is complex.
         - If you get stuck on the task, consider either: do a planning step or use the finish_task tool and explain why you did not succeed.

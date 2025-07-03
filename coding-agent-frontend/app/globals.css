@@ -183,8 +183,10 @@ body {
   flex-direction: column;
   margin: 0 auto;
   animation: fadeIn 0.5s ease-out;
-  flex-grow: 1; /* NEW: Wrapper must grow to fill main-content */
+  flex-grow: 1;
+  min-height: 0; /* <-- ADD THIS LINE */
 }
+
 .agent-terminal-wrapper.task-mode {
   padding-top: 7rem;
 }
@@ -333,17 +335,18 @@ body {
   font-size: 0.75rem;
 }
 
-/* Find this existing rule */
 .terminal-container {
     background: var(--bg-100);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
-    margin-bottom: 0.5rem; /* This creates the desired gap */
+    margin-bottom: 0.5rem; 
+    
+    /* --- KEY CHANGES --- */
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    flex-grow: 1;
+    flex-grow: 1; /* Make this container fill the available space in its parent */
+    min-height: 0; /* Prevents flexbox overflow issues in some browsers */
+    overflow: hidden; /* Hide any overflow from children, like rounded corners */
 }
 
 
@@ -392,16 +395,17 @@ body {
   animation-delay: 0.4s;
 }
 
-/* Find this existing rule and modify it */
 .terminal {
     background: var(--bg);
-    flex-grow: 1; 
-    overflow-y: auto;
+    
+    /* --- KEY CHANGES --- */
+    flex-grow: 1; /* Make the message area grow to fill the parent .terminal-container */
+    overflow-y: auto; /* THIS element will scroll when its content is too tall */
+
     padding: 0.5rem;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.875rem;
 }
-
 
 /* --- Model Selector --- */
 .model-selector {
