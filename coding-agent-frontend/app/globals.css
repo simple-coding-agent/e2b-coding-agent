@@ -247,3 +247,184 @@ body {
 pre, .tool-section-content { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
 .tool-section-header { font-size: 0.7rem; font-weight: 500; text-transform: uppercase; color: var(--fg-100); margin-bottom: 0.5rem; padding-left: 0.25rem; }
 .text-success { color: var(--success); } .text-error { color: var(--error); } .text-info { color: var(--accent); }
+
+/* globals.css */
+
+/* ... (all your existing CSS) ... */
+
+/* --- Terminal Header Model Name --- */
+.model-display-name {
+  color: var(--fg-200);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* --- Model Selector --- */
+.model-selector {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 20; /* Higher than textarea, lower than toast */
+}
+
+/* The button you click to open the selector */
+.model-selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-200);
+  border: 1px solid var(--border);
+  color: var(--fg-50);
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.model-selector-trigger:hover {
+  border-color: var(--fg-200);
+  color: var(--fg);
+}
+
+.model-selector-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.model-selector-chevron {
+  color: var(--fg-100);
+  transition: transform 0.2s ease-in-out;
+}
+
+.model-selector-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* The drop-up panel */
+/* Wrapper for the trigger and panel. Positioned inside the input area. */
+.model-selector {
+  position: absolute;
+  top: 1rem;      /* Position 1rem from the top of the input container */
+  left: 1.5rem;   /* Position 1.5rem from the left, aligning with textarea text */
+  z-index: 20;
+}
+
+/* The trigger button, now styled as simple text. */
+.model-selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent; /* No background box */
+  border: none;            /* No border */
+  padding: 0;              /* No extra padding */
+  color: var(--fg-100);    /* Subtler color to act like a label */
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  user-select: none;
+}
+
+.model-selector-trigger:hover:not(:disabled) {
+  color: var(--fg); /* Brighten on hover to show it's interactive */
+}
+
+/* Accessibility focus-state for keyboard navigation */
+.model-selector-trigger:focus-visible {
+  outline: none;
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
+.model-selector-chevron {
+  color: var(--fg-200); /* Dimmer color for the chevron */
+  transition: transform 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.model-selector-trigger:hover:not(:disabled) .model-selector-chevron {
+  color: var(--fg-100);
+}
+
+.model-selector-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* The drop-up panel (no changes to the children, just its position) */
+.model-selector-panel {
+  position: absolute;
+  bottom: calc(100% + 12px); /* Position above the trigger with a 12px gap */
+  left: -12px;               /* Nudge left to align nicely with the text trigger */
+  width: 280px;
+  background: var(--bg-200);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.model-group {
+  padding: 0.5rem 0;
+}
+.model-group:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.model-group-label {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--fg-100);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.model-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  color: var(--fg-50);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.model-option:hover {
+  background-color: var(--bg-300);
+  color: var(--fg);
+}
+.model-option.selected {
+  color: var(--accent);
+  font-weight: 500;
+}
+.model-option.selected:hover {
+  background-color: var(--bg-300);
+}
+.model-option.selected svg {
+  color: var(--accent);
+}
+
+
+/* --- Adjustments for input textarea --- */
+.input-section textarea {
+  /* Padding top is still needed to prevent typed text from overlapping the trigger */
+  padding-top: 3.25rem;
+}

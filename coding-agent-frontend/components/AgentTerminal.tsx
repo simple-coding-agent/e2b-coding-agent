@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
 import {
-  CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight,
+  CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight, ChevronUp,
   BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit, Github, Server, Link
 } from 'lucide-react'
 
@@ -16,15 +16,55 @@ type ToolCallEvent = ProcessedEventBase & { displayType: 'TOOL_CALL'; status: 'r
 type ProcessedEvent = TaskLifecycleEvent | ErrorEvent | ThoughtEvent | ToolCallEvent;
 type SessionState = 'NO_SESSION' | 'CREATING_SESSION' | 'SESSION_ACTIVE';
 interface RepoInfo { name: string; owner: string; isFork: boolean; }
+interface Model { id: string; name: string; }
+interface ModelGroup { provider: string; models: Model[]; }
+
 
 // --- Constants ---
-const AVAILABLE_MODELS = [
-  { id: 'openai/gpt-4o', name: 'OpenAI GPT-4o' },
-  { id: 'anthropic/claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
-  { id: 'google/gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro' },
-  { id: 'anthropic/claude-3-haiku-20240307', name: 'Claude 3 Haiku' },
+const MODEL_GROUPS: ModelGroup[] = [
+  {
+    provider: 'OpenAI',
+    models: [
+      { id: 'openai/gpt-4o', name: 'ChatGPT 4o' },
+      { id: 'openai/gpt-4.1', name: 'GPT-4.1' },
+    ]
+  },
+  {
+    provider: 'Anthropic',
+    models: [
+      { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+      { id: 'anthropic/claude-opus-4', name: 'Claude Opus 4' },
+    ]
+  },
+  {
+    provider: 'Google',
+    models: [
+      { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    ]
+  },
+  {
+    provider: 'Mistral AI',
+    models: [
+      { id: 'mistralai/mistral-medium-3', name: 'Mistral Medium 3' },
+    ]
+  },
+  {
+    provider: 'DeepSeek',
+    models: [
+      { id: 'deepseek/deepseek-r1-0528', name: 'DeepSeek R1' },
+    ]
+  },
+  {
+    provider: 'xAI',
+    models: [
+      { id: 'x-ai/grok-3-mini', name: 'Grok 3 Mini' },
+    ]
+  }
 ];
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
+const ALL_MODELS = MODEL_GROUPS.flatMap(g => g.models);
+
 
 // --- Custom Hook for Status Toast (Unchanged) ---
 function useStatusToast() {
@@ -55,8 +95,10 @@ export default function AgentTerminal() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [isTaskRunning, setIsTaskRunning] = useState(false);
-  const [repoUrl, setRepoUrl] = useState<string>('https://github.com/e2b-dev/agent-protocol'); // Default for easier testing
-  const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0].id);
+  const [repoUrl, setRepoUrl] = useState<string>('https://github.com/simple-coding-agent/playground_repo');
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-4o');
+  const [lastUsedModelId, setLastUsedModelId] = useState<string | null>(null);
+  const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
 
   // Event and UI state
   const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
@@ -65,10 +107,31 @@ export default function AgentTerminal() {
   // Refs & Hooks
   const queryRef = useRef<HTMLTextAreaElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+  const modelSelectorRef = useRef<HTMLDivElement>(null);
   const eventCache = useRef(new Map<string, ProcessedEvent>()).current;
   const runningTools = useRef(new Map<string, string>()).current;
   const { status, isExiting, showStatus } = useStatusToast();
 
+  const lastUsedModelName = useMemo(() => {
+    if (!lastUsedModelId) return null;
+    return ALL_MODELS.find(m => m.id === lastUsedModelId)?.name || lastUsedModelId;
+  }, [lastUsedModelId]);
+
+  const selectedModelName = useMemo(() => {
+    return ALL_MODELS.find(m => m.id === selectedModel)?.name || selectedModel;
+  }, [selectedModel]);
+
+  // Effect to close model selector on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+        setIsModelSelectorOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => { document.removeEventListener("mousedown", handleClickOutside); };
+  }, [modelSelectorRef]);
+  
   // Auto-scroll logic (Unchanged)
   useLayoutEffect(() => {
     const terminalEl = terminalRef.current;
@@ -80,7 +143,7 @@ export default function AgentTerminal() {
     }
   }, [rawEvents]);
 
-  // REVISED Event processing logic to filter out setup/repo events
+  // Event processing logic (Unchanged)
   const processedEvents = useMemo(() => {
     const filteredRawEvents = rawEvents.filter(event => 
         !event.type.startsWith('repo.') && 
@@ -113,7 +176,7 @@ export default function AgentTerminal() {
     if (!isError) showStatus('Task finished. Ready for next command.', 'success');
   }
 
-  // REVISED Session Creation Logic
+  // Session Creation Logic (Unchanged)
   const createSession = async () => {
     if (!repoUrl.trim() || !repoUrl.includes('github.com')) {
       showStatus('Please enter a valid GitHub repository URL', 'error');
@@ -125,6 +188,7 @@ export default function AgentTerminal() {
     runningTools.clear();
     setRawEvents([]);
     setExpandedEvents(new Set());
+    setLastUsedModelId(null);
 
     try {
       const response = await fetch(`${API_BASE_URL}/sessions`, {
@@ -150,11 +214,12 @@ export default function AgentTerminal() {
     }
   };
 
-  // REVISED Task Starting Logic
+  // Task Starting Logic (Unchanged)
   const startTask = async () => {
     const query = queryRef.current?.value.trim();
     if (!query || !sessionId) return;
-
+    setLastUsedModelId(selectedModel);
+    
     eventCache.clear();
     runningTools.clear();
     setRawEvents([]);
@@ -177,9 +242,7 @@ export default function AgentTerminal() {
       eventSource.onmessage = (e) => {
         const event: RawEvent = JSON.parse(e.data);
         if (event.type === 'stream.keepalive') return;
-        
         setRawEvents(prev => [...prev, event]);
-        
         switch (event.type) { 
           case 'llm.thought': showStatus('Agent is thinking...', 'info'); break; 
           case 'llm.tool_call.start': showStatus(`Executing: ${event.data.tool_name}`, 'info'); break; 
@@ -240,7 +303,13 @@ export default function AgentTerminal() {
       )}
 
       <div className="terminal-container">
-        <div className="terminal-header"><Cloud size={16} /> Agent Stream</div>
+        <div className="terminal-header">
+          <Cloud size={16} /> 
+          <span>Agent Stream</span>
+          {lastUsedModelName && (
+            <span className="model-display-name">- {lastUsedModelName}</span>
+          )}
+        </div>
         <div className="terminal" ref={terminalRef}>
           {processedEvents.map(event => <RenderableEvent key={event.key} event={event} />)}
         </div>
@@ -248,21 +317,49 @@ export default function AgentTerminal() {
 
       {!isTaskRunning && (
         <div className="input-section">
-          <div className="input-controls">
-            <div className="model-selector-container">
-              <Server size={16} />
-              <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="model-selector" disabled={isTaskRunning}>
-                {AVAILABLE_MODELS.map(model => (<option key={model.id} value={model.id}>{model.name}</option>))}
-              </select>
-            </div>
-          </div>
           <div className="input-container">
+            <div className="model-selector" ref={modelSelectorRef}>
+              {/* --- REVISED: Simplified Button --- */}
+              <button
+                className="model-selector-trigger"
+                onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
+                disabled={isTaskRunning}
+              >
+                {/* Icon removed for a simpler look */}
+                <span>{selectedModelName}</span>
+                <ChevronUp size={16} className={`model-selector-chevron ${isModelSelectorOpen ? 'open' : ''}`} />
+              </button>
+              {isModelSelectorOpen && (
+                <div className="model-selector-panel">
+                  {MODEL_GROUPS.map(group => (
+                    <div key={group.provider} className="model-group">
+                      <div className="model-group-label">{group.provider}</div>
+                      {group.models.map(model => (
+                        <div
+                          key={model.id}
+                          className={`model-option ${selectedModel === model.id ? 'selected' : ''}`}
+                          onClick={() => {
+                            setSelectedModel(model.id);
+                            setIsModelSelectorOpen(false);
+                          }}
+                        >
+                          {model.name}
+                          {selectedModel === model.id && <CheckCircle size={14} />}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
             <textarea
               ref={queryRef}
               placeholder="Describe the task for the AI agent..."
               disabled={isTaskRunning}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startTask(); }}}
             />
+
             <button
               onClick={startTask} disabled={isTaskRunning}
               className={`submit-button ${isTaskRunning ? 'loading' : ''}`}
