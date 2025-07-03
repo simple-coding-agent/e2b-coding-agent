@@ -9,6 +9,7 @@
   --bg-300: #252529;
 
   --fg: #e4e4e7;
+  --fg-50: #d2d2d3;
   --fg-100: #a1a1aa;
   --fg-200: #71717a;
   
@@ -21,7 +22,8 @@
   --accent-fg: #ffffff;
 
   /* Semantic Colors */
-  --success: #22c55e;
+  --success: #178d42; 
+
   --warning: #f59e0b;
   --error: #ef4444;
   --info: #3b82f6;
@@ -50,15 +52,6 @@ body {
 /* --- Keyframes --- */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: 0.7; } }
-
-/* @keyframes fadeIn { 
-  from { opacity: 0; } 
-  to   { opacity: 1; } 
-}
-@keyframes fadeOut { 
-  from { opacity: 1; transform: translateY(0); } 
-  to   { opacity: 0; transform: translateY(10px); } 
-}  */
 
 /* --- App Layout --- */
 .app-container {
@@ -138,8 +131,8 @@ body {
 }
 .input-section textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  background: var(--bg-200);
+  border-color: var(--accent-dark);
+  /* background: var(--bg-200); */
 }
 .submit-button {
   position: absolute;
@@ -196,7 +189,7 @@ body {
 }
 .status-toast.exiting { animation: fadeOut 0.3s ease-in forwards; }
 .status-indicator { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.status-toast.info .status-indicator { background: var(--info); }
+.status-toast.info .status-indicator { background: var(--accent); }
 .status-toast.success .status-indicator { background: var(--success); }
 .status-toast.error .status-indicator { background: var(--error); animation: none; }
 .status-toast:not(.error) .status-indicator { animation: pulse 2s infinite; }
@@ -239,13 +232,13 @@ body {
 .expand-icon.expanded { transform: rotate(90deg); }
 .event-timestamp { margin-left: auto; font-size: 0.75rem; color: var(--fg-200); white-space: nowrap; }
 .thought-event { padding: 0.75rem; border-radius: var(--radius); background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.1); color: var(--fg-100); }
-.thought-event .event-header { padding: 0; margin-bottom: 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--purple); }
+.thought-event .event-header { padding: 0; margin-bottom: 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--fg-50); }
 .thought-event .event-content p { margin: 0; white-space: pre-wrap; line-height: 1.6; color: var(--fg); }
 .tool-call-event .event-header { border: 1px solid var(--border); background: var(--bg-100); border-left-width: 3px; }
-.tool-call-event.status-running .event-header { border-left-color: var(--info); }
+.tool-call-event.status-running .event-header { border-left-color: var(--accent); }
 .tool-call-event.status-completed .event-header { border-left-color: var(--success); }
 .tool-call-event.status-error .event-header { border-left-color: var(--error); }
-.event-tool { color: var(--tool-color); font-weight: 500; }
+.event-tool { color: var(--fg-50); font-weight: 500; }
 .tool-icon, .tool-status-icon { display: flex; align-items: center; justify-content: center; }
 .simple-event { display: flex; align-items: center; padding: 0.5rem 0.75rem; font-size: 0.8rem; color: var(--fg-100); }
 .simple-event .event-header { width: 100%; padding: 0; }
@@ -253,4 +246,4 @@ body {
 .tool-details, .event-data { margin: 0.5rem 0.75rem 0.75rem 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.85rem; line-height: 1.6; }
 pre, .tool-section-content { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
 .tool-section-header { font-size: 0.7rem; font-weight: 500; text-transform: uppercase; color: var(--fg-100); margin-bottom: 0.5rem; padding-left: 0.25rem; }
-.text-success { color: var(--success); } .text-error { color: var(--error); } .text-info { color: var(--info); }
+.text-success { color: var(--success); } .text-error { color: var(--error); } .text-info { color: var(--accent); }

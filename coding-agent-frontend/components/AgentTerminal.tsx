@@ -6,7 +6,6 @@ import {
   BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit
 } from 'lucide-react'
 
-// --- Interfaces and Types --- (No changes here)
 
 interface RawEvent { type: string; timestamp: string; data: any; }
 interface ProcessedEventBase { key: string; timestamp: string; raw: RawEvent; }
