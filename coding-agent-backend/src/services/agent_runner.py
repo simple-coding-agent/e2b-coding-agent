@@ -1,5 +1,3 @@
-# src/services/agent_runner.py
-
 import asyncio
 import traceback
 from datetime import datetime
