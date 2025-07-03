@@ -22,9 +22,6 @@ async def run_agent_task(
     """
     task = active_tasks[task_id]
     queue = task['event_queue']
-    
-    # Define error_occurred flag to be used in finally block
-    error_occurred = False
 
     def emit_event(event: asyncio.Future):
         asyncio.run_coroutine_threadsafe(event, loop)
@@ -60,6 +57,7 @@ async def run_agent_task(
             "read_file": ReadFile(repo),
             "write_file": WriteFile(repo),
             "delete_files": DeleteFiles(repo),
+            "run_bash_command": RunCommand(repo), 
             "commit_and_push": CommitAndPush(repo),
             "finish_task": FinishTask(loop_instance)
         }
@@ -85,21 +83,16 @@ async def run_agent_task(
             "data": {"response": final_response, "total_iterations": loop_instance.iteration_count}
         })
         
-        # THE FIX (Part 1): Set status on success within the try block
         task['status'] = 'complete'
 
     except Exception as e:
-        error_occurred = True
         await queue.put({
             "type": "task.error",
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"error": str(e), "error_type": type(e).__name__, "traceback": traceback.format_exc()}
         })
-        # THE FIX (Part 2): Set status on failure within the except block
         task['status'] = 'error'
         
     finally:
-        # THE FIX (Part 3): The finally block now only handles the universal cleanup.
-        # The complex conditional logic is no longer needed.
         task['complete'] = True
 

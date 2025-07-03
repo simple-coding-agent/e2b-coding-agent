@@ -14,12 +14,10 @@ class BaseTool(ABC):
     def emit_event(self, event_type: str, data: dict):
         """Emit a standardized, hierarchical event."""
         if self._event_callback:
-            # All events are now prefixed with 'tool.'
-            # The tool name is now part of the data payload for consistency.
             full_event_type = f"tool.{event_type}"
             event_data = {
                 "tool_name": self.name,
-                **data # Merge the specific data
+                **data # merge the payload
             }
             self._event_callback({
                 "type": full_event_type,
@@ -55,7 +53,8 @@ class ObserveRepoStructure(BaseTool):
                 "properties": {
                     "max_depth": {
                         "type": "integer",
-                        "description": "Maximum depth to traverse in the directory tree. depth 3 is recommended."
+                        "description": "Maximum depth to traverse in the directory tree. depth 1 is recommended initially."
+                        " If more information needed, increase the depth in second call."
                     },
                     "show_hidden": {
                         "type": "boolean",
@@ -72,7 +71,6 @@ class ObserveRepoStructure(BaseTool):
         self.repo = repo
     
     def execute(self, max_depth: int, show_hidden: bool):
-        # Emit start event with parameters
         self.emit_event("start", {
             "max_depth": max_depth,
             "show_hidden": show_hidden
@@ -81,7 +79,6 @@ class ObserveRepoStructure(BaseTool):
         try:
             structure = self.repo.observe_repo_structure(max_depth=max_depth, show_hidden=show_hidden)
             
-            # Emit end event with results only
             self.emit_event("end", {
                 "structure_preview": structure[:1000] + "..." if len(structure) > 1000 else structure,
                 "total_length": len(structure),
@@ -90,7 +87,6 @@ class ObserveRepoStructure(BaseTool):
             
             return structure
         except Exception as e:
-            # Emit error event
             self.emit_event("error", {
                 "error": str(e)
             })
@@ -122,13 +118,10 @@ class ReadFile(BaseTool):
         self.repo = repo
     
     def execute(self, file_path: str):
-        # Emit start event with parameters
         self.emit_event("start", {"file_path": file_path})
         
         try:
             content = self.repo.read_file(file_path=file_path)
-            
-            # Emit end event with results only
             self.emit_event("end", {
                 "content_preview": content[:500] + "..." if len(content) > 500 else content,
                 "content_length": len(content),
@@ -171,7 +164,6 @@ class WriteFile(BaseTool):
         self.repo = repo
     
     def execute(self, file_path: str, content: str):
-        # Emit start event with parameters
         self.emit_event("start", {
             "file_path": file_path,
             "content_length": len(content),
@@ -180,8 +172,6 @@ class WriteFile(BaseTool):
         
         try:
             result = self.repo.write_file(file_path=file_path, content=content)
-            
-            # Emit end event with results only
             self.emit_event("end", {
                 "status": "file_written",
                 "content_preview": content[:200] + "..." if len(content) > 200 else content,
@@ -223,7 +213,6 @@ class DeleteFiles(BaseTool):
         self.repo = repo
     
     def execute(self, file_paths: list[str]):
-        # Emit start event with parameters
         self.emit_event("start", {
             "file_paths": file_paths,
             "file_count": len(file_paths)
@@ -231,8 +220,6 @@ class DeleteFiles(BaseTool):
         
         try:
             result = self.repo.delete_files(file_paths=file_paths)
-            
-            # Emit end event with results only
             self.emit_event("end", {
                 "status": "files_deleted",
                 "deleted_count": len(file_paths),
@@ -270,15 +257,12 @@ class CommitAndPush(BaseTool):
         self.repo = repo
     
     def execute(self, commit_message: str):
-        # Emit start event with parameters
         self.emit_event("start", {
             "commit_message": commit_message
         })
         
         try:
             result = self.repo.commit_and_push_to_main(commit_message=commit_message)
-            
-            # Emit end event with results only
             self.emit_event("end", {
                 "status": "committed_and_pushed",
                 "commit_result": result,
@@ -316,23 +300,17 @@ class FinishTask(BaseTool):
         self.agentic_loop = agentic_loop
     
     def execute(self, summary: str):
-        # Emit start event with parameters
         self.emit_event("start", {
             "summary": summary
         })
         
         try:
-            # Signal the loop to stop
             self.agentic_loop.stop()
-            
-            # Format the final message for the LLM history
             result = (
                 f"\n{'='*60}\nTask Completion Report\n{'='*60}\n"
                 f"Summary: {summary}\n"
                 f"{'='*60}\n"
             )
-            
-            # Emit end event with results only
             self.emit_event("end", {
                 "status": "task_finished",
                 "final_report": result,
@@ -343,3 +321,45 @@ class FinishTask(BaseTool):
         except Exception as e:
             self.emit_event("error", {"error": str(e)})
             raise
+
+
+class RunCommand(BaseTool):
+    name = "run_bash_command"
+    function_schema = {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": (
+                "Executes a shell command in the root of the repository. "
+                "Useful for running tests, build scripts, or other command-line tools like controlling git. "
+                "Can execute multiple commands chained with '&&'. Returns the command output."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute (e.g., 'git --help' or 'pytest')."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    }
+
+    def __init__(self, repo):
+        super().__init__()
+        self.repo = repo
+
+    def execute(self, command: str):
+        self.emit_event("start", {"command": command})
+        
+        output = self.repo.run_bash_command_in_repo_root(command_to_run=command)
+        
+        self.emit_event("end", {
+            "output_preview": output[:1000] + "..." if len(output) > 1000 else output,
+            "output_length": len(output),
+            "command": command
+        })
+        
+        return output

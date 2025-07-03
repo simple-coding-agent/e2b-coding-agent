@@ -238,7 +238,6 @@ export default function AgentTerminal() {
             <span>Agent Stream</span>
             {lastUsedModelName && (<span className="model-display-name">- {lastUsedModelName}</span>)}
         </div>
-        {/* NEW: Loading indicator placeholder. Appears when a task is running. */}
         {isTaskRunning && (
             <div className="loading-indicator">
                 <span /><span /><span />
@@ -253,8 +252,6 @@ export default function AgentTerminal() {
 
 
   // --- Main Render Logic ---
-
-  // 1. Render setup screen if no session is active
   if (sessionState !== 'SESSION_ACTIVE') {
     return (
       <div className="setup-container">
@@ -272,27 +269,20 @@ export default function AgentTerminal() {
     );
   }
 
-  // 2. Render views for an active session
   return (
     <div className={`agent-terminal-wrapper ${!hasStartedFirstTask ? 'pre-task-mode' : 'task-mode'}`}>
       {!hasStartedFirstTask ? (
-        // --- Centered "Perplexity-style" view before the first task ---
         <div className="pre-task-container">
           {renderRepoStatusBar()}
           {renderInputArea()}
         </div>
       ) : (
-        // --- Main terminal view after the first task has started ---
-        // CHANGED: The structure here is now a single div that CSS will manage as a flex column
-        // This fixes the overflow issue.
         <div className="main-view-container">
           {renderRepoStatusBar()}
           {renderTerminal()}
           {renderInputArea()} {/* CHANGED: Input area is now always rendered */}
         </div>
       )}
-
-      {/* Status toast is always rendered at the end to overlay correctly */}
       {status && (<div className={`status-toast ${status.type} ${isExiting ? 'exiting' : ''}`}><div className="status-indicator" /><span>{status.message}</span></div>)}
     </div>
   );

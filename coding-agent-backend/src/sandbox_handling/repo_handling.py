@@ -9,22 +9,36 @@ from typing import Callable, Optional
 
 load_dotenv()
 
-def run_command_at_path(command_to_run: str, sandbox: "Sandbox", path: str = None):
+def run_command_at_path(command_to_run: str, sandbox: "Sandbox", path: str = None) -> str:
+    """
+    Runs a command at a specific path in the sandbox and returns its output.
+    """
     # Prepend directory change if path is provided
     if path:
         full_command = f'cd {path} && {command_to_run}'
     else:
         full_command = command_to_run
 
+    print(f"Executing in sandbox: {full_command}")
     result = sandbox.commands.run(full_command, timeout=300)
 
-    if result.exit_code != 0 or result.stderr:
-        print(result.stderr or result.error or f"Exit code: {result.exit_code}")
-    else:
-        lines = result.stdout.strip().split('\n')
-        print("Output:")
-        for line in lines:
-            print(line)
+    # Consolidate output for the agent
+    output_parts = []
+    if result.stdout:
+        output_parts.append("---STDOUT---")
+        output_parts.append(result.stdout)
+    
+    if result.stderr:
+        output_parts.append("---STDERR---")
+        output_parts.append(result.stderr)
+
+    if result.exit_code != 0:
+        output_parts.append(f"---SYSTEM---\nCommand failed with exit code {result.exit_code}.")
+    
+    if not output_parts:
+        return "Command executed successfully with no output."
+    
+    return "\n".join(output_parts)
 
 
 class GithubRepo:
@@ -145,8 +159,12 @@ class GithubRepo:
         self._configure_git_credentials()
         self._emit_event("setup.end", {"message": "Repository setup complete."})
 
-    def run_bash_command_in_repo_root(self, command_to_run):
-        run_command_at_path(command_to_run, self.sandbox, self.repo_name)
+    def run_bash_command_in_repo_root(self, command_to_run: str) -> str:
+        """
+        Runs a shell command in the root directory of the repository and returns the output.
+        """
+        print(f"Running command in repo '{self.repo_name}': {command_to_run}")
+        return run_command_at_path(command_to_run, self.sandbox, self.repo_name)
 
     def commit_and_push_to_main(self, commit_message: str):
         print(f"Committing and pushing changes: {commit_message}")

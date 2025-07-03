@@ -29,7 +29,7 @@ class ActiveSessionSummary(BaseModel):
 class TaskCreateRequest(BaseModel):
     """Request to run a new agent task within an existing session."""
     query: str
-    max_iterations: int = 20
+    max_iterations: int = 50 # max iteration for the agent to take
     model: str = "openai/gpt-4o"
 
 class TaskResponse(BaseModel):

@@ -37,6 +37,7 @@ class OpenRouterModel(BaseModel):
                              api_key=open_router_api_key)
         
         self.tools = tools
+
         self._event_callback: Optional[Callable[[Dict], None]] = None
         self._executor = ThreadPoolExecutor(max_workers=5)
     
