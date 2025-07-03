@@ -15,6 +15,7 @@ class SessionResponse(BaseModel):
     status: str
     repo_owner: str
     repo_name: str
+    is_fork: bool
 
 class ActiveSessionSummary(BaseModel):
     """Summary of an active session for listing."""

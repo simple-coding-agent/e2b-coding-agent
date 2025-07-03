@@ -6,6 +6,7 @@ import traceback
 from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Path
 from fastapi.responses import StreamingResponse
+import json  # <--- IMPORT THE JSON LIBRARY
 
 from e2b_code_interpreter import Sandbox
 from src.sandbox_handling.repo_handling import GithubRepo
@@ -24,12 +25,13 @@ async def event_generator(task_id: str):
     """Generate server-sent events for a specific task."""
     task = active_tasks.get(task_id)
     if not task:
-        yield f"data: {{\"type\": \"task.error\", \"timestamp\": \"{datetime.utcnow().isoformat()}\", \"data\": {{\"message\": \"Task not found\"}}}}\n\n"
+        # Manually crafted JSON is fine here for simple error messages
+        yield f"data: {json.dumps({'type': 'task.error', 'timestamp': datetime.utcnow().isoformat(), 'data': {'message': 'Task not found'}})}\n\n"
         return
 
     queue = task.get('event_queue')
     if not queue:
-        yield f"data: {{\"type\": \"task.error\", \"timestamp\": \"{datetime.utcnow().isoformat()}\", \"data\": {{\"message\": \"Event queue not found for task\"}}}}\n\n"
+        yield f"data: {json.dumps({'type': 'task.error', 'timestamp': datetime.utcnow().isoformat(), 'data': {'message': 'Event queue not found for task'}})}\n\n"
         return
 
     while True:
@@ -38,12 +40,13 @@ async def event_generator(task_id: str):
 
         try:
             event = await asyncio.wait_for(queue.get(), timeout=1.0)
-            yield f"data: {event}\n\n" # Event is already a JSON string
+            # THE FIX: Use json.dumps to properly serialize the dictionary to a JSON string.
+            yield f"data: {json.dumps(event)}\n\n"
             queue.task_done()
         except asyncio.TimeoutError:
-            yield f"data: {{\"type\": \"stream.keepalive\", \"timestamp\": \"{datetime.utcnow().isoformat()}\", \"data\": {{}}}}\n\n"
+            yield f"data: {json.dumps({'type': 'stream.keepalive', 'timestamp': datetime.utcnow().isoformat(), 'data': {}})}\n\n"
 
-    yield f"data: {{\"type\": \"task.end\", \"timestamp\": \"{datetime.utcnow().isoformat()}\", \"data\": {{\"task_id\": \"{task_id}\"}}}}\n\n"
+    yield f"data: {json.dumps({'type': 'task.end', 'timestamp': datetime.utcnow().isoformat(), 'data': {'task_id': task_id}})}\n\n"
 
 
 # --- Session Endpoints ---
@@ -57,23 +60,25 @@ async def create_session(request: SessionCreateRequest):
     session_id = str(uuid.uuid4())
     sandbox = None
     try:
-        # This is a potentially long-running operation.
         sandbox = await asyncio.to_thread(Sandbox, timeout=1200)
 
         repo = GithubRepo(repo_url=request.repo_url, sandbox=sandbox)
-        
+        original_owner, _ = repo._parse_url()
+
         # The setup_repository method is synchronous, so we run it in an executor
-        # to avoid blocking the event loop.
+        # to avoid blocking the event loop. This is crucial for long I/O operations.
         await asyncio.to_thread(repo.setup_repository)
 
         new_session = Session(session_id=session_id, sandbox=sandbox, repo=repo)
         active_sessions[session_id] = new_session
 
+        is_fork = original_owner.lower() != repo.repo_owner.lower()
         return SessionResponse(
             session_id=session_id,
             status="ready",
             repo_owner=repo.repo_owner,
             repo_name=repo.repo_name,
+            is_fork=is_fork, 
         )
     except Exception as e:
         if sandbox:

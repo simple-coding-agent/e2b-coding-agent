@@ -127,12 +127,16 @@ class GithubRepo:
     def setup_repository(self):
         self._emit_event("setup.start", {"url": self.repo_url})
         original_owner, repo_name = self._parse_url()
+
+        print(original_owner, repo_name)
         
         if original_owner.lower() == self.auth_user_name.lower():
+            print("The user owns the repo ")
             self._emit_event("ownership.check", {"is_owner": True, "message": "You are the owner. Cloning directly."})
             self.repo_owner = original_owner
             self._clone_repo(self.repo_owner, repo_name)
         else:
+            print("The user does not own the repo ")
             self._emit_event("ownership.check", {"is_owner": False, "message": "Not the owner. Forking to your account..."})
             self._fork_repo(original_owner, repo_name)
             self.repo_owner = self.auth_user_name

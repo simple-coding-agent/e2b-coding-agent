@@ -3,27 +3,30 @@
 import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
 import {
   CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight,
-  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit
+  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit, Github, Server, Link
 } from 'lucide-react'
 
-
+// --- Type Definitions ---
 interface RawEvent { type: string; timestamp: string; data: any; }
 interface ProcessedEventBase { key: string; timestamp: string; raw: RawEvent; }
 type TaskLifecycleEvent = ProcessedEventBase & { displayType: 'TASK_LIFECYCLE'; icon: JSX.Element; message: string; };
-type SetupEvent = ProcessedEventBase & { displayType: 'SETUP'; icon: JSX.Element; message: string; };
 type ErrorEvent = ProcessedEventBase & { displayType: 'ERROR'; message: string; content?: any; };
 type ThoughtEvent = ProcessedEventBase & { displayType: 'LLM_THOUGHT'; text: string; };
-type ToolCallEvent = ProcessedEventBase & {
-  displayType: 'TOOL_CALL';
-  status: 'running' | 'completed' | 'error';
-  toolName: string;
-  params: any;
-  output?: any;
-  error?: any;
-};
-type ProcessedEvent = TaskLifecycleEvent | SetupEvent | ErrorEvent | ThoughtEvent | ToolCallEvent;
+type ToolCallEvent = ProcessedEventBase & { displayType: 'TOOL_CALL'; status: 'running' | 'completed' | 'error'; toolName: string; params: any; output?: any; error?: any; };
+type ProcessedEvent = TaskLifecycleEvent | ErrorEvent | ThoughtEvent | ToolCallEvent;
+type SessionState = 'NO_SESSION' | 'CREATING_SESSION' | 'SESSION_ACTIVE';
+interface RepoInfo { name: string; owner: string; isFork: boolean; }
 
-// --- Custom Hook for Status Toast --- (No changes here)
+// --- Constants ---
+const AVAILABLE_MODELS = [
+  { id: 'openai/gpt-4o', name: 'OpenAI GPT-4o' },
+  { id: 'anthropic/claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
+  { id: 'google/gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro' },
+  { id: 'anthropic/claude-3-haiku-20240307', name: 'Claude 3 Haiku' },
+];
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
+
+// --- Custom Hook for Status Toast (Unchanged) ---
 function useStatusToast() {
   const [status, setStatus] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
   const [isExiting, setIsExiting] = useState(false);
@@ -45,121 +48,231 @@ function useStatusToast() {
 }
 
 
+// --- Main Component ---
 export default function AgentTerminal() {
-  const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const [hasRunOnce, setHasRunOnce] = useState(false);
-  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  // Session and Task state
+  const [sessionState, setSessionState] = useState<SessionState>('NO_SESSION');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
+  const [isTaskRunning, setIsTaskRunning] = useState(false);
+  const [repoUrl, setRepoUrl] = useState<string>('https://github.com/e2b-dev/agent-protocol'); // Default for easier testing
+  const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0].id);
 
+  // Event and UI state
+  const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  
+  // Refs & Hooks
   const queryRef = useRef<HTMLTextAreaElement>(null);
-  const { status, isExiting, showStatus } = useStatusToast();
   const terminalRef = useRef<HTMLDivElement>(null);
   const eventCache = useRef(new Map<string, ProcessedEvent>()).current;
   const runningTools = useRef(new Map<string, string>()).current;
+  const { status, isExiting, showStatus } = useStatusToast();
 
-  // REVISED: Smarter auto-scroll that only scrolls if user is already at the bottom.
-  // We use useLayoutEffect to run this after the DOM has been updated but before the browser has painted.
+  // Auto-scroll logic (Unchanged)
   useLayoutEffect(() => {
     const terminalEl = terminalRef.current;
     if (terminalEl) {
-      // A buffer to consider the user "at the bottom" even if they're a few pixels off.
       const isScrolledToBottom = terminalEl.scrollHeight - terminalEl.scrollTop <= terminalEl.clientHeight + 50;
-      
-      // If the user was at the bottom before the new message, stay at the bottom.
       if (isScrolledToBottom) {
         terminalEl.scrollTop = terminalEl.scrollHeight;
       }
     }
   }, [rawEvents]);
 
-  // Logic for processing raw events into a displayable format (No changes here)
+  // REVISED Event processing logic to filter out setup/repo events
   const processedEvents = useMemo(() => {
-    rawEvents.forEach((event, index) => {
+    const filteredRawEvents = rawEvents.filter(event => 
+        !event.type.startsWith('repo.') && 
+        !event.type.startsWith('setup.')
+    );
+
+    filteredRawEvents.forEach((event, index) => {
       let key = `event-${index}-${event.timestamp}`;
       if (eventCache.has(key)) return;
+
       let processed: ProcessedEvent | null = null;
       let shouldCache = true;
-      switch (event.type) { case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp }; break; case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; case 'setup.sandbox.end': case 'setup.repo.end': case 'setup.model.end': processed = { key, displayType: 'SETUP', icon: <CheckCircle className="text-success" size={16} />, message: event.data.message, raw: event, timestamp: event.timestamp }; break; case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; }
+
+      switch (event.type) { 
+        case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; 
+        case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp }; break; 
+        case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; 
+        case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; 
+        case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; 
+        case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; 
+        case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; 
+      }
       if (processed && shouldCache) { eventCache.set(processed.key, processed); }
     });
     return Array.from(eventCache.values());
   }, [rawEvents, eventCache, runningTools]);
 
   const handleTaskEnd = (isError = false) => {
-    setIsRunning(false);
+    setIsTaskRunning(false);
     if (!isError) showStatus('Task finished. Ready for next command.', 'success');
   }
 
-  const startTask = async () => {
-    const query = queryRef.current?.value.trim();
-    if (!query) { showStatus('Please enter a task', 'error'); return; }
-    if (!hasRunOnce) setHasRunOnce(true);
-    eventCache.clear(); runningTools.clear(); setRawEvents([]); setExpandedEvents(new Set());
-    setIsRunning(true); showStatus('Agent starting...', 'info');
+  // REVISED Session Creation Logic
+  const createSession = async () => {
+    if (!repoUrl.trim() || !repoUrl.includes('github.com')) {
+      showStatus('Please enter a valid GitHub repository URL', 'error');
+      return;
+    }
+    setSessionState('CREATING_SESSION');
+    showStatus('Setting up repository environment...', 'info');
+    eventCache.clear();
+    runningTools.clear();
+    setRawEvents([]);
+    setExpandedEvents(new Set());
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, model: 'openai/gpt-4o' }), });
+      const response = await fetch(`${API_BASE_URL}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_url: repoUrl }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data: { session_id: string; repo_owner: string; repo_name: string; is_fork: boolean } = await response.json();
+      setSessionId(data.session_id);
+      setRepoInfo({ owner: data.repo_owner, name: data.repo_name, isFork: data.is_fork });
+      setSessionState('SESSION_ACTIVE');
+      showStatus(data.is_fork ? 'Repository forked and ready.' : 'Repository connected and ready.', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showStatus(`Session setup failed: ${errorMessage}`, 'error');
+      setSessionState('NO_SESSION');
+    }
+  };
+
+  // REVISED Task Starting Logic
+  const startTask = async () => {
+    const query = queryRef.current?.value.trim();
+    if (!query || !sessionId) return;
+
+    eventCache.clear();
+    runningTools.clear();
+    setRawEvents([]);
+    setExpandedEvents(new Set());
+    setIsTaskRunning(true);
+    showStatus('Agent starting...', 'info');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, model: selectedModel }),
+      });
+
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      if (queryRef.current) { queryRef.current.value = ''; }
-      const eventSource = new EventSource(`http://127.0.0.1:8000/tasks/${data.task_id}/events`);
+      if (queryRef.current) queryRef.current.value = '';
+
+      const eventSource = new EventSource(`${API_BASE_URL}/tasks/${data.task_id}/events`);
       eventSource.onmessage = (e) => {
         const event: RawEvent = JSON.parse(e.data);
         if (event.type === 'stream.keepalive') return;
+        
         setRawEvents(prev => [...prev, event]);
-        switch (event.type) { case 'llm.thought': showStatus('Agent is thinking...', 'info'); break; case 'llm.tool_call.start': showStatus(`Executing: ${event.data.tool_name}`, 'info'); break; case 'llm.tool_call.end': if (event.data.was_successful) showStatus(`Completed: ${event.data.tool_name}`, 'success'); break; case 'task.end': eventSource.close(); handleTaskEnd(); break; case 'task.error': showStatus(event.data.error || 'An unknown error occurred', 'error'); eventSource.close(); handleTaskEnd(true); break; }
+        
+        switch (event.type) { 
+          case 'llm.thought': showStatus('Agent is thinking...', 'info'); break; 
+          case 'llm.tool_call.start': showStatus(`Executing: ${event.data.tool_name}`, 'info'); break; 
+          case 'task.end': eventSource.close(); handleTaskEnd(); break; 
+          case 'task.error': showStatus(event.data.error || 'An unknown error occurred', 'error'); eventSource.close(); handleTaskEnd(true); break; 
+        }
       };
       eventSource.onerror = () => { showStatus('Stream connection lost.', 'error'); eventSource.close(); handleTaskEnd(true); };
-    } catch (error) { const errorMessage = error instanceof Error ? error.message : String(error); showStatus(`Failed to start task: ${errorMessage}`, 'error'); handleTaskEnd(true); }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showStatus(`Failed to start task: ${errorMessage}`, 'error');
+      handleTaskEnd(true);
+    }
   };
 
+  // --- UI Components ---
   const toggleEventExpansion = (key: string) => { setExpandedEvents(prev => { const newSet = new Set(prev); if (newSet.has(key)) newSet.delete(key); else newSet.add(key); return newSet; }); };
   const formatJson = (data: any) => JSON.stringify(data, null, 2);
   const formatTimestamp = (timestamp?: string) => timestamp ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false }) : '';
-  const RenderableEvent = React.memo(({ event }: { event: ProcessedEvent }) => { const isExpanded = expandedEvents.has(event.key); const renderToolIcon = (toolName: string) => { if (toolName.includes('commit')) return <GitCommitHorizontal size={16} />; if (toolName.includes('observe') || toolName.includes('write')) return <Terminal size={16} />; return <Cog size={16} />; }; switch (event.displayType) { case 'LLM_THOUGHT': return (<div className="event thought-event"><div className="event-header"><span className='mr-2'><BrainCircuit size={16} /></span><span>Agent thought:</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div><div className='event-content'><p>{event.text}</p></div></div>); case 'TOOL_CALL': const StatusIcon = { running: <Loader className="animate-spin text-info" size={16} />, completed: <CheckCircle className="text-success" size={16} />, error: <XCircle className="text-error" size={16} />, }[event.status]; return (<div className={`event tool-call-event status-${event.status}`}><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className="tool-status-icon">{StatusIcon}</span><span className="tool-icon">{renderToolIcon(event.toolName)}</span><span className="event-tool">{event.toolName}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && (<div className="tool-details"><h4 className="tool-section-header">Parameters</h4><pre className="tool-section-content">{formatJson(event.params)}</pre>{event.output && (<><h4 className="tool-section-header">Output Preview</h4><pre className="tool-section-content">{event.output}</pre></>)}{event.error && (<><h4 className="tool-section-header text-error">Error</h4><pre className="tool-section-content">{formatJson(event.error)}</pre></>)}</div>)}</div>); case 'ERROR': return (<div className="event simple-event event-error"><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className='mr-2'><TriangleAlert size={16} /></span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && <pre className="event-data">{formatJson(event.content)}</pre>}</div>); case 'SETUP': case 'TASK_LIFECYCLE': return (<div className="event simple-event"><div className="event-header"><span className='mr-2'>{event.icon}</span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div></div>); default: return null; } });
+  const RenderableEvent = React.memo(({ event }: { event: ProcessedEvent }) => { const isExpanded = expandedEvents.has(event.key); const renderToolIcon = (toolName: string) => { if (toolName.includes('commit')) return <GitCommitHorizontal size={16} />; if (toolName.includes('observe') || toolName.includes('write')) return <Terminal size={16} />; return <Cog size={16} />; }; switch (event.displayType) { case 'LLM_THOUGHT': return (<div className="event thought-event"><div className="event-header"><span className='mr-2'><BrainCircuit size={16} /></span><span>Agent thought:</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div><div className='event-content'><p>{event.text}</p></div></div>); case 'TOOL_CALL': const StatusIcon = { running: <Loader className="animate-spin text-info" size={16} />, completed: <CheckCircle className="text-success" size={16} />, error: <XCircle className="text-error" size={16} />, }[event.status]; return (<div className={`event tool-call-event status-${event.status}`}><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className="tool-status-icon">{StatusIcon}</span><span className="tool-icon">{renderToolIcon(event.toolName)}</span><span className="event-tool">{event.toolName}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && (<div className="tool-details"><h4 className="tool-section-header">Parameters</h4><pre className="tool-section-content">{formatJson(event.params)}</pre>{event.output && (<><h4 className="tool-section-header">Output Preview</h4><pre className="tool-section-content">{event.output}</pre></>)}{event.error && (<><h4 className="tool-section-header text-error">Error</h4><pre className="tool-section-content">{formatJson(event.error)}</pre></>)}</div>)}</div>); case 'ERROR': return (<div className="event simple-event event-error"><div className="event-header clickable" onClick={() => toggleEventExpansion(event.key)}><ChevronRight className={`expand-icon ${isExpanded ? 'expanded' : ''}`} size={16} /><span className='mr-2'><TriangleAlert size={16} /></span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div>{isExpanded && <pre className="event-data">{formatJson(event.content)}</pre>}</div>); case 'TASK_LIFECYCLE': return (<div className="event simple-event"><div className="event-header"><span className='mr-2'>{event.icon}</span><span>{event.message}</span><span className="event-timestamp">{formatTimestamp(event.timestamp)}</span></div></div>); default: return null; } });
   RenderableEvent.displayName = 'RenderableEvent';
 
-  return (
-    <div className={`agent-terminal-wrapper ${!hasRunOnce ? 'idle' : ''}`}>
-      {hasRunOnce && (
-        <div className="terminal-container">
-          <div className="terminal-header"><Cloud size={16} /> Agent Stream</div>
-          <div className="terminal" ref={terminalRef}>
-            {processedEvents.map(event => <RenderableEvent key={event.key} event={event} />)}
+
+  if (sessionState !== 'SESSION_ACTIVE') {
+    return (
+      <div className="setup-container">
+        <div className="setup-box">
+          <Github size={48} className="mb-4 text-gray-400" />
+          <h2 className="text-2xl font-semibold mb-2">Connect a Repository</h2>
+          <p className="text-gray-400 mb-6 text-center">Provide a GitHub URL to begin. The agent will fork the repository to your account if needed to enable commits.</p>
+          <div className="w-full flex items-center gap-2">
+            <Link size={20} className="text-gray-500 flex-shrink-0" />
+            <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo-name" className="setup-input" disabled={sessionState === 'CREATING_SESSION'}/>
           </div>
+          <button onClick={createSession} disabled={sessionState === 'CREATING_SESSION'} className="setup-button">
+            {sessionState === 'CREATING_SESSION' ? <Loader className="animate-spin" /> : 'Start Session'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`agent-terminal-wrapper`}>
+      {repoInfo && (
+        <div className="repo-status-bar">
+          <div className="repo-info">
+            <Github size={16} />
+            <span>Working on: <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
+          </div>
+          {repoInfo.isFork && (
+            <div className="fork-badge">
+              <GitCommitHorizontal size={14} />
+              <span>Fork</span>
+            </div>
+          )}
         </div>
       )}
 
-      {!isRunning && (
+      <div className="terminal-container">
+        <div className="terminal-header"><Cloud size={16} /> Agent Stream</div>
+        <div className="terminal" ref={terminalRef}>
+          {processedEvents.map(event => <RenderableEvent key={event.key} event={event} />)}
+        </div>
+      </div>
+
+      {!isTaskRunning && (
         <div className="input-section">
+          <div className="input-controls">
+            <div className="model-selector-container">
+              <Server size={16} />
+              <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="model-selector" disabled={isTaskRunning}>
+                {AVAILABLE_MODELS.map(model => (<option key={model.id} value={model.id}>{model.name}</option>))}
+              </select>
+            </div>
+          </div>
           <div className="input-container">
             <textarea
               ref={queryRef}
-              placeholder={
-                hasRunOnce
-                  ? "Enter a follow-up command or a new task..."
-                  : "Describe the task for the AI agent..."
-              }
-              disabled={isRunning}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startTask(); } }}
+              placeholder="Describe the task for the AI agent..."
+              disabled={isTaskRunning}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startTask(); }}}
             />
             <button
-              onClick={startTask}
-              disabled={isRunning}
-              className={`submit-button ${isRunning ? 'loading' : ''}`}
-              title="Start Task (Enter)">
-              {'>'}
+              onClick={startTask} disabled={isTaskRunning}
+              className={`submit-button ${isTaskRunning ? 'loading' : ''}`}
+              title="Start Task (Enter)">{'>'}
             </button>
           </div>
         </div>
       )}
 
-      {status && (
-        <div className={`status-toast ${status.type} ${isExiting ? 'exiting' : ''}`}>
-          <div className="status-indicator" />
-          <span>{status.message}</span>
-        </div>
-      )}
+      {status && (<div className={`status-toast ${status.type} ${isExiting ? 'exiting' : ''}`}><div className="status-indicator" /><span>{status.message}</span></div>)}
     </div>
   );
 }
