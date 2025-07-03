@@ -1,3 +1,5 @@
+// components/AgentTerminal.tsx
+
 'use client'
 
 import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
@@ -66,7 +68,6 @@ export default function AgentTerminal() {
   const [selectedModel, setSelectedModel] = useState('openai/gpt-4o');
   const [lastUsedModelId, setLastUsedModelId] = useState<string | null>(null);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
-  // NEW: State to track if the first task has started, controls the UI transition
   const [hasStartedFirstTask, setHasStartedFirstTask] = useState(false);
 
   // Event and UI state
@@ -142,7 +143,7 @@ export default function AgentTerminal() {
       setSessionId(data.session_id);
       setRepoInfo({ owner: data.repo_owner, name: data.repo_name, isFork: data.is_fork });
       setSessionState('SESSION_ACTIVE');
-      setHasStartedFirstTask(false); // REVISED: Reset the UI to the pre-task state for the new session
+      setHasStartedFirstTask(false); 
       showStatus(data.is_fork ? 'Repository forked and ready.' : 'Repository connected and ready.', 'success');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -154,9 +155,9 @@ export default function AgentTerminal() {
   // Task Starting Logic
   const startTask = async () => {
     const query = queryRef.current?.value.trim();
-    if (!query || !sessionId) return;
+    if (!query || !sessionId || isTaskRunning) return;
 
-    setHasStartedFirstTask(true); // REVISED: Trigger the UI transition to the main terminal view
+    setHasStartedFirstTask(true);
     setLastUsedModelId(selectedModel);
     
     eventCache.clear(); runningTools.clear(); setRawEvents([]); setExpandedEvents(new Set());
@@ -232,9 +233,17 @@ export default function AgentTerminal() {
   const renderTerminal = () => (
     <div className="terminal-container">
       <div className="terminal-header">
-        <Cloud size={16} /> 
-        <span>Agent Stream</span>
-        {lastUsedModelName && (<span className="model-display-name">- {lastUsedModelName}</span>)}
+        <div className='header-left'>
+            <Cloud size={16} /> 
+            <span>Agent Stream</span>
+            {lastUsedModelName && (<span className="model-display-name">- {lastUsedModelName}</span>)}
+        </div>
+        {/* NEW: Loading indicator placeholder. Appears when a task is running. */}
+        {isTaskRunning && (
+            <div className="loading-indicator">
+                <span /><span /><span />
+            </div>
+        )}
       </div>
       <div className="terminal" ref={terminalRef}>
         {processedEvents.map(event => <RenderableEvent key={event.key} event={event} />)}
@@ -265,8 +274,7 @@ export default function AgentTerminal() {
 
   // 2. Render views for an active session
   return (
-    // Add a class for CSS to target the different modes
-    <div className={`agent-terminal-wrapper ${!hasStartedFirstTask ? 'pre-task-mode' : ''}`}>
+    <div className={`agent-terminal-wrapper ${!hasStartedFirstTask ? 'pre-task-mode' : 'task-mode'}`}>
       {!hasStartedFirstTask ? (
         // --- Centered "Perplexity-style" view before the first task ---
         <div className="pre-task-container">
@@ -275,11 +283,13 @@ export default function AgentTerminal() {
         </div>
       ) : (
         // --- Main terminal view after the first task has started ---
-        <>
+        // CHANGED: The structure here is now a single div that CSS will manage as a flex column
+        // This fixes the overflow issue.
+        <div className="main-view-container">
           {renderRepoStatusBar()}
           {renderTerminal()}
-          {!isTaskRunning && renderInputArea()}
-        </>
+          {renderInputArea()} {/* CHANGED: Input area is now always rendered */}
+        </div>
       )}
 
       {/* Status toast is always rendered at the end to overlay correctly */}
