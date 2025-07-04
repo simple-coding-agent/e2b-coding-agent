@@ -41,6 +41,13 @@ class BaseTool(ABC):
         pass
 
 
+class TaskFinished(Exception):
+    """Custom exception raised by FinishTask tool to signal graceful task completion."""
+    def __init__(self, summary: str):
+        self.summary = summary
+        super().__init__(f"Task finished with summary: {summary}")
+
+
 class ObserveRepoStructure(BaseTool):
     name = "observe_repo_structure"
     function_schema = {
@@ -295,9 +302,8 @@ class FinishTask(BaseTool):
         }
     }
     
-    def __init__(self, agentic_loop):
+    def __init__(self):
         super().__init__()
-        self.agentic_loop = agentic_loop
     
     def execute(self, summary: str):
         self.emit_event("start", {
@@ -305,7 +311,7 @@ class FinishTask(BaseTool):
         })
         
         try:
-            self.agentic_loop.stop()
+            # The agent loop will be stopped by the exception handling
             result = (
                 f"\n{'='*60}\nTask Completion Report\n{'='*60}\n"
                 f"Summary: {summary}\n"
@@ -317,7 +323,11 @@ class FinishTask(BaseTool):
                 "summary_length": len(summary)
             })
             
-            return result
+
+            raise TaskFinished(summary)
+            
+        except TaskFinished:
+            raise # Re-raise to ensure it's caught by the agent loop
         except Exception as e:
             self.emit_event("error", {"error": str(e)})
             raise

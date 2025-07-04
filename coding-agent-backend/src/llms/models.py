@@ -8,7 +8,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from openai import OpenAI
-from .tools import BaseTool
+from .tools import BaseTool, TaskFinished
 
 load_dotenv()
 
@@ -147,6 +147,12 @@ class OpenRouterModel(BaseModel):
                     error_msg = f"Tool '{tool_name}' not found or is not available."
                     self.emit_event("tool_call.end", {"tool_name": tool_name, "was_successful": False, "error": error_msg})
                     tool_call_responses.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_name, "content": error_msg})
+
+
+            except TaskFinished:
+                # We re-raise it immediately so the AgenticLoop can catch it and stop gracefully.
+                raise
+
             
             except Exception as e:
                 import traceback
