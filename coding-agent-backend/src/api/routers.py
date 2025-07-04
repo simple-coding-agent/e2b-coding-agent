@@ -157,6 +157,27 @@ async def get_task_events(task_id: str = Path(..., description="The ID of the ta
         }
     )
 
+@router.post("/tasks/{task_id}/stop", status_code=202)
+async def stop_task(task_id: str = Path(..., description="The ID of the task to stop.")):
+    """
+    Requests a graceful stop for a running agent task.
+    """
+    if task_id not in active_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = active_tasks[task_id]
+    if task.get('complete', False):
+        raise HTTPException(status_code=400, detail="Task has already completed.")
+
+    # Signal the task to stop by putting a message on its control queue
+    control_queue = task.get('control_queue')
+    if control_queue:
+        await control_queue.put("stop_request")
+        return {"message": "Stop signal sent to task."}
+    else:
+        raise HTTPException(status_code=500, detail="Task is not in a state to be stopped.")
+    
+
 @router.get("/tasks", response_model=list[ActiveTaskSummary])
 async def list_active_tasks():
     """List all currently active or recently completed tasks."""

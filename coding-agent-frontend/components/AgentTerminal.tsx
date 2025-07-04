@@ -3,7 +3,8 @@
 import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
 import {
   CheckCircle, Loader, TriangleAlert, XCircle, ChevronRight, ChevronUp,
-  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit
+  BotMessageSquare, Terminal, Cog, GitCommitHorizontal, Cloud, BrainCircuit,
+  Square // <-- Import the new icon for the stop button
 } from 'lucide-react'
 
 // --- Type Definitions ---
@@ -67,6 +68,10 @@ export default function AgentTerminal() {
   const [lastUsedModelId, setLastUsedModelId] = useState<string | null>(null);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [hasStartedFirstTask, setHasStartedFirstTask] = useState(false);
+  
+  // NEW: State for stop functionality
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [isStopping, setIsStopping] = useState(false);
 
   // Event and UI state
   const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
@@ -117,7 +122,7 @@ export default function AgentTerminal() {
     filteredRawEvents.forEach((event, index) => {
       let key = `event-${index}-${event.timestamp}`; if (eventCache.has(key)) return;
       let processed: ProcessedEvent | null = null; let shouldCache = true;
-      switch (event.type) { case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle size={16} className="text-success" />, message: `Task completed successfully (${event.data.total_iterations} iterations)`, raw: event, timestamp: event.timestamp }; break; case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; }
+      switch (event.type) { case 'task.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <span className='text-success'>▶</span>, message: `Task started: "${event.data.query}"`, raw: event, timestamp: event.timestamp }; break; case 'task.finish': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <CheckCircle size={16} className="text-success" />, message: `Task completed successfully: "${event.data.response}"`, raw: event, timestamp: event.timestamp }; break; case 'task.error': processed = { key, displayType: 'ERROR', message: event.data.error, content: event.data, raw: event, timestamp: event.timestamp }; break; case 'agent.loop.start': processed = { key, displayType: 'TASK_LIFECYCLE', icon: <BotMessageSquare className="text-info" size={16} />, message: "Agent started working on the task", raw: event, timestamp: event.timestamp }; break; case 'llm.thought': processed = { key, displayType: 'LLM_THOUGHT', text: event.data.text, raw: event, timestamp: event.timestamp }; break; case 'llm.tool_call.start': key = `tool-${event.data.tool_name}-${event.timestamp}`; processed = { key, displayType: 'TOOL_CALL', status: 'running', toolName: event.data.tool_name, params: event.data.arguments, raw: event, timestamp: event.timestamp }; runningTools.set(event.data.tool_name, key); break; case 'llm.tool_call.end': const runningToolKey = runningTools.get(event.data.tool_name); if (runningToolKey && eventCache.has(runningToolKey)) { const toolToUpdate = eventCache.get(runningToolKey) as ToolCallEvent; toolToUpdate.status = event.data.was_successful ? 'completed' : 'error'; if (event.data.was_successful) toolToUpdate.output = event.data.response_preview; else toolToUpdate.error = event.data.error; runningTools.delete(event.data.tool_name); } shouldCache = false; break; }
       if (processed && shouldCache) { eventCache.set(processed.key, processed); }
     });
     return Array.from(eventCache.values());
@@ -125,6 +130,8 @@ export default function AgentTerminal() {
 
   const handleTaskEnd = (isError = false) => {
     setIsTaskRunning(false);
+    setCurrentTaskId(null);
+    setIsStopping(false);
     if (!isError) showStatus('Task finished. Ready for next command.', 'success');
   }
 
@@ -150,7 +157,6 @@ export default function AgentTerminal() {
     }
   };
 
-  // Task Starting Logic
   const startTask = async () => {
     const query = queryRef.current?.value.trim();
     if (!query || !sessionId || isTaskRunning) return;
@@ -158,7 +164,6 @@ export default function AgentTerminal() {
     setHasStartedFirstTask(true);
     setLastUsedModelId(selectedModel);
     
-    // Preserve event history from previous runs, but clear state for the new task.
     runningTools.clear();
     setExpandedEvents(new Set());
 
@@ -168,15 +173,39 @@ export default function AgentTerminal() {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, model: selectedModel }), });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
+      const data: { task_id: string } = await response.json();
+      
+      setCurrentTaskId(data.task_id); // <-- STORE THE TASK ID
+      
       if (queryRef.current) queryRef.current.value = '';
       const eventSource = new EventSource(`${API_BASE_URL}/tasks/${data.task_id}/events`);
-      eventSource.onmessage = (e) => { const event: RawEvent = JSON.parse(e.data); if (event.type === 'stream.keepalive') return; setRawEvents(prev => [...prev, event]); switch (event.type) { case 'llm.thought': showStatus('Agent is thinking...', 'info'); break; case 'llm.tool_call.start': showStatus(`Executing: ${event.data.tool_name}`, 'info'); break; case 'task.end': eventSource.close(); handleTaskEnd(); break; case 'task.error': showStatus(event.data.error || 'An unknown error occurred', 'error'); eventSource.close(); handleTaskEnd(true); break; } };
+      eventSource.onmessage = (e) => { const event: RawEvent = JSON.parse(e.data); if (event.type === 'stream.keepalive') return; setRawEvents(prev => [...prev, event]); switch (event.type) { case 'llm.thought': showStatus('Agent is thinking...', 'info'); break; case 'llm.tool_call.start': showStatus(`Executing: ${event.data.tool_name}`, 'info'); break; case 'task.finish': eventSource.close(); handleTaskEnd(); break; case 'task.error': showStatus(event.data.error || 'An unknown error occurred', 'error'); eventSource.close(); handleTaskEnd(true); break; } };
       eventSource.onerror = () => { showStatus('Stream connection lost.', 'error'); eventSource.close(); handleTaskEnd(true); };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       showStatus(`Failed to start task: ${errorMessage}`, 'error');
       handleTaskEnd(true);
+    }
+  };
+
+  // NEW: Function to stop the currently running task
+  const stopTask = async () => {
+    if (!currentTaskId || isStopping) return;
+
+    setIsStopping(true);
+    showStatus('Sending stop signal...', 'info');
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${currentTaskId}/stop`, { method: 'POST' });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to send stop signal.");
+      }
+      showStatus('Stop signal accepted. Waiting for agent to terminate.', 'success');
+      // The `task.finish` event from the stream will call `handleTaskEnd`, cleaning up the UI state.
+    } catch (error) {
+       const errorMessage = error instanceof Error ? error.message : String(error);
+       showStatus(`Stop request failed: ${errorMessage}`, 'error');
+       setIsStopping(false); // Re-enable the button if the API call itself fails
     }
   };
 
@@ -202,7 +231,6 @@ export default function AgentTerminal() {
           <span>Working on <strong>{repoInfo.owner}/{repoInfo.name}</strong></span>
         )}
       </div>
-      {/* The fork badge is only shown when a task is active */}
       {hasStartedFirstTask && repoInfo.isFork && (
         <div className="fork-badge">
           <GitCommitHorizontal size={14} />
@@ -250,8 +278,19 @@ export default function AgentTerminal() {
             {lastUsedModelName && (<span className="model-display-name">- {lastUsedModelName}</span>)}
         </div>
         {isTaskRunning && (
-            <div className="loading-indicator">
-                <span /><span /><span />
+            <div className="header-right">
+                <div className="loading-indicator">
+                    <span /><span /><span />
+                </div>
+                {}
+                <div 
+                  className={`stop-control ${isStopping ? 'disabled' : ''}`}
+                  onClick={stopTask} 
+                  title="Stop the current task"
+                >
+                  <Square size={12} />
+                  <span>Stop</span>
+                </div>
             </div>
         )}
       </div>
@@ -288,7 +327,7 @@ export default function AgentTerminal() {
         <div className="main-view-container">
           {renderRepoStatusBar()}
           {renderTerminal()}
-          {renderInputArea()} {}
+          {renderInputArea()}
         </div>
       )}
       {status && (<div className={`status-toast ${status.type} ${isExiting ? 'exiting' : ''}`}><div className="status-indicator" /><span>{status.message}</span></div>)}
