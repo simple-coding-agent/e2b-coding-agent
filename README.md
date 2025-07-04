@@ -1,4 +1,3 @@
-
 # Coding Agent
 
 This repository contains a coding agent that can clone a GitHub repository, plan and execute tasks, and interact with the user through a web interface. The agent is built with the E2B Python SDK and the frontend is a Next.js application.
@@ -45,7 +44,23 @@ To run the coding agent, you'll need to have Docker and Node.js installed on you
 git clone https://github.com/e2b-dev/coding-agent.git
 ```
 
-**2. Start the backend:**
+**2. Set up environment variables:**
+
+Before running the backend, you'll need to create a `.env` file in the `coding-agent-backend` directory. You can copy the example file as a starting point:
+
+```bash
+cp coding-agent-backend/.env.example coding-agent-backend/.env
+```
+
+Then, you'll need to fill in the following environment variables in the `.env` file:
+
+-   `E2B_API_KEY`: Your E2B API key. You can get one from the [E2B website](https://e2b.dev/docs).
+-   `OPENROUTER_API_KEY`: Your OpenRouter API key. This is required to use the LLM models.
+-   `GITHUB_TOKEN`: Your GitHub personal access token. This is used to clone private repositories and to push changes.
+-   `GITHUB_EMAIL`: The email address associated with your GitHub account.
+-   `GITHUB_USERNAME`: Your GitHub username.
+
+**3. Start the backend:**
 
 ```bash
 cd coding-agent/coding-agent-backend
@@ -53,7 +68,7 @@ pip install -r requirements.txt
 uvicorn src.api.main:app --reload
 ```
 
-**3. Start the frontend:**
+**4. Start the frontend:**
 
 ```bash
 cd coding-agent/coding-agent-frontend
@@ -61,7 +76,7 @@ npm install
 npm run dev
 ```
 
-**4. Open your browser:**
+**5. Open your browser:**
 
 Navigate to [http://localhost:3000](http://localhost:3000) to start using the coding agent.
 
