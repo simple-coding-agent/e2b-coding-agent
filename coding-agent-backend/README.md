@@ -1,22 +1,43 @@
-# Backend README
+# Coding Agent Backend
 
-This document provides an overview of the backend's file structure.
+This backend provides the core logic for the coding agent, including the agentic loop, API, and sandbox handling.
 
 ## File Structure
+```
+coding-agent-backend/
+├── pyproject.toml
+└── src/
+    ├── agent/
+    │   ├── __init__.py
+    │   └── agentic_loop.py
+    ├── api/
+    │   ├── __init__.py
+    │   ├── main.py
+    │   ├── routers.py
+    │   ├── schemas.py
+    │   └── state.py
+    ├── llms/
+    │   ├── __init__.py
+    │   ├── models.py
+    │   └── tools.py
+    ├── sandbox_handling/
+    │   ├── __init__.py
+    │   └── repo_handling.py
+    └── services/
+        ├── __init__.py
+        └── agent_runner.py
+```
 
--   `src/`: This directory contains the main source code for the backend application.
-    -   `agent/`: This directory contains the core logic for the coding agent.
-        -   `agentic_loop.py`: This file contains the main loop that drives the agent's behavior.
-    -   `api/`: This directory contains the FastAPI application that exposes the backend's functionality.
-        -   `main.py`: This file is the entry point for the FastAPI application.
-        -   `routers.py`: This file defines the API routes for the backend.
-        -   `schemas.py`: This file defines the data models used by the API.
-        -   `state.py`: This file manages the state of the application.
-    -   `llms/`: This directory contains the code for interacting with different language models.
-        -   `models.py`: This file provides a unified interface for different language models.
-        -   `tools.py`: This file defines the tools that the agent can use.
-    -   `sandbox_handling/`: This directory contains the code for managing the E2B sandbox.
-        -   `repo_handling.py`: This file handles the cloning and management of GitHub repositories.
-    -   `services/`: This directory contains the business logic for the application.
-        -   `agent_runner.py`: This file runs the agent and manages its lifecycle.
--   `pyproject.toml`: This file defines the project's dependencies.
+- **`src/agent/agentic_loop.py`**: Manages the agentic loop, which is the main driver of the agent's behavior.
+- **`src/api/`**: Contains the FastAPI application, including the main entrypoint, routers, and schemas.
+- **`src/llms/`**: Handles interactions with the language models, including models and tools.
+- **`src/sandbox_handling/`**: Manages the repository and file system operations.
+- **`src/services/`**: Contains the agent runner, which is responsible for executing the agent's tasks.
+
+## How it Works
+
+The backend is a FastAPI application that exposes an API for interacting with the coding agent. The main logic is contained in the `agentic_loop.py` file, which implements the agentic loop.
+
+When a new task is received, the `agent_runner` creates an `AgenticLoop` instance and runs it in a separate thread. The `AgenticLoop` then repeatedly calls the language model to get the next action to perform. The actions are defined in the `tools.py` file and include things like reading and writing files and running shell commands.
+
+The `repo_handling.py` file provides a safe way to interact with the file system, by sandboxing the agent's operations to a specific directory.
